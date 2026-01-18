@@ -1,5 +1,4 @@
 import unittest
-import json
 from unittest.mock import MagicMock
 
 from gsima import environments
@@ -35,11 +34,11 @@ class TestMiniGridAgent(BaseAgentTests):
         )
 
         self.llm_runtime = MagicMock()
-        # Mock the LLM to return a JSON string with both thought and action
+        # Mock the LLM to return a markdown string with both thought and action
         self.llm_runtime.get_model_response.side_effect = [
-            json.dumps({"thought": "The path is clear and the goal is generally in front of me, so I will move forward.", "action": "MOVE_FORWARD"}),
-            json.dumps({"thought": "Continuing forward seems correct.", "action": "MOVE_FORWARD"}),
-            json.dumps({"thought": "I believe I am near the goal now, I should stop to complete the mission.", "action": "STOP"}),
+            "- **thought**: [The path is clear and the goal is generally in front of me, so I will move forward.]\n- **action**: [MOVE_FORWARD]",
+            "- **thought**: [Continuing forward seems correct.]\n- **action**: [MOVE_FORWARD]",
+            "- **thought**: [I believe I am near the goal now, I should stop to complete the mission.]\n- **action**: [STOP]",
         ]
 
         # --- Get Environment and its Configured Components ---

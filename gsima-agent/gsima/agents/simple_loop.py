@@ -1,7 +1,6 @@
 import logging
-import json
 import re
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 import gymnasium as gym
 
@@ -9,18 +8,6 @@ from gsima.utils import config
 from .base import BaseAgent
 from .context import AgentContext
 
-def _extract_json_safely(raw_response: str) -> Optional[str]:
-    """
-    Attempts to extract a JSON string from a raw LLM response.
-    Returns the extracted JSON string or None if not found/invalid.
-    """
-    cleaned_response = raw_response.strip().replace("'", '"')
-    json_match = re.search(r"\{.*?\}", cleaned_response, re.DOTALL)
-    
-    if json_match:
-        return json_match.group(0)
-    
-    return cleaned_response if cleaned_response else None
 
 def _parse_markdown_kv(markdown_text: str) -> Dict[str, str]:
     """
@@ -41,23 +28,22 @@ def _parse_markdown_kv(markdown_text: str) -> Dict[str, str]:
         
     return data
 
-def get_action_from_prompt(prompt: str, llm_runtime: Any) -> Dict:
+def get_decision_from_prompt(prompt: str, llm_runtime: Any) -> Dict[str, str]:
     """
-    Returns a JSON action by invoking the provided text-only LLM runtime
-    with a dynamic prompt.
+    Returns a decision dictionary by invoking the provided text-only LLM runtime
+    with a dynamic prompt and parsing the markdown response.
     """
     raw_response = llm_runtime.get_model_response(prompt)
     logging.debug(f"Raw model response: {raw_response}")
 
-    json_str_to_parse = _extract_json_safely(raw_response)
-    if json_str_to_parse is None:
-        raise RuntimeError("LLM did not return any identifiable JSON structure")
+    decision_dict = _parse_markdown_kv(raw_response)
+    if not decision_dict:
+        raise RuntimeError("LLM did not return any identifiable structured data in markdown format")
     
-    action_json = json.loads(json_str_to_parse)
-    if "action" not in action_json:
-        raise RuntimeError("LLM response missing 'action' key")
+    if "action" not in decision_dict:
+        raise RuntimeError("LLM response missing 'action' key in markdown structure")
 
-    return action_json
+    return decision_dict
 
 class SimpleLoopAgent(BaseAgent):
     """
@@ -96,9 +82,9 @@ class SimpleLoopAgent(BaseAgent):
             prompt = context.get_prompt(config.INSTRUCTION, structured_perception, memory_summary)
             
             try:
-                decision_json = get_action_from_prompt(prompt, context.llm_runtime)
-                thought = decision_json.get("thought", "N/A")
-                action_name = decision_json.get("action")
+                decision_dict = get_decision_from_prompt(prompt, context.llm_runtime)
+                thought = decision_dict.get("thought", "N/A")
+                action_name = decision_dict.get("action")
 
                 logging.info(f"Agent thought: \"{thought}\"")
                 logging.info(f"Agent decided action: {action_name}")
@@ -110,7 +96,7 @@ class SimpleLoopAgent(BaseAgent):
                 if env_action == -1: # STOP sentinel
                     logging.info("STOP action received. Ending episode.")
                     break
-            except (json.JSONDecodeError, RuntimeError, KeyError) as e:
+            except (RuntimeError, KeyError) as e:
                 logging.error(f"Error during agent decision phase: {e}. Ending episode.")
                 break
 
