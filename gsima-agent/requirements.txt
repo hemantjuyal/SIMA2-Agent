@@ -1,0 +1,9 @@
+gymnasium[other]
+minigrid
+mlx
+mlx-lm
+mlx-vlm
+python-dotenv
+requests
+pytest
+numpy
