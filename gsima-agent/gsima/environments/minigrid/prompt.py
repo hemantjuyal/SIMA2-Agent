@@ -1,76 +1,74 @@
-"""Builds the LLM prompt for MiniGrid environments."""
-import logging
+"""
+Prompts and summaries for MiniGrid environments, designed for a 'Perceive-Think-Act' agent.
+"""
+import json
 from typing import Deque, Dict, Any
+
 from gsima.environments.minigrid.schema import SUPPORTED_ACTIONS
 
 def get_visual_prompt() -> str:
     """
-    Returns the environment-specific prompt string for the VLM to describe the scene.
+    Returns a prompt that instructs the VLM to return a simple, human-readable
+    Markdown list. This is more reliable for models that struggle with JSON.
     """
     return (
-        "You are an agent in a simple grid-based world. "
-        "The image provided is a top-down view of this world. "
-        "You are the red triangle, and the direction you face is indicated by the triangle's point. "
-        "Describe the scene concisely. Crucially, you must state what is directly in front of you (e.g., 'a wall', 'an open path', 'the green square'). "
-        "Also, describe your general location and the location of the green square goal. "
-        "Black squares are obstacles. Your description should be a few sentences at most."
+        "Analyze the provided grid world image from a top-down perspective. "
+        "You are the red triangle. The goal is the green square. "
+        "Describe the scene using the following markdown format. Do not add any other explanations or text. "
+        "Provide your analysis inside the brackets. "
+        "\n\n"
+        "### Scene Analysis\n"
+        "- **Agent Orientation**: [Your analysis: NORTH, SOUTH, EAST, or WEST]\n"
+        "- **Goal Relative Position**: [Your analysis: e.g., front-left, right, back]\n"
+        "- **Obstacle In Front**: [Your analysis: true or false]"
     )
 
-def get_prompt(instruction: str, visual_description: str = "", memory_summary: str = "") -> str:
+def get_prompt(instruction: str, structured_perception: Dict[str, Any], memory_summary: str) -> str:
     """
-    Dynamically generates the prompt for the agent based on the supported
-    actions for the MiniGrid environment, a visual description, and a memory summary.
+    Dynamically generates the main prompt for the LLM, instructing it to think
+    before it acts.
     """
-    action_descriptions = {
-        "MOVE_FORWARD": "Move one step in the current direction.",
-        "TURN_LEFT": "Rotate 90 degrees counter-clockwise to change direction.",
-        "TURN_RIGHT": "Rotate 90 degrees clockwise to change direction.",
-        "STOP": "Terminate the episode ONLY when you are on the green square."
-    }
-    action_list_with_descriptions = "\n".join([f"- {action.name}: {action_descriptions[action.name]}" for action in SUPPORTED_ACTIONS])
-    
-    prompt = f"""
-You are an intelligent agent in a grid world. Your mission is to find the green square and then use the STOP action. Always aim for the most efficient path.
+    action_list = [action.name for action in SUPPORTED_ACTIONS]
+    perception_str = json.dumps(structured_perception, indent=2)
 
-First, analyze your current situation based on the visual input.
-Second, review your recent history to understand what has and has not worked.
-Finally, decide your next action.
+    return f"""You are an intelligent and methodical agent in a grid world. Your mission is to efficiently reach the green square.
+
+**MISSION:** {instruction}
+
+You must follow this process:
+1.  **Analyze** your current situation from PERCEPTION and MEMORY.
+2.  **THINK** and formulate a clear, one-sentence rationale for your next move.
+3.  **ACT** by choosing a single action based on your thought.
 
 ---
-**Step 1: Analyze the Visual Situation**
+**1. PERCEPTION (from Vision Model):**
+```json
+{perception_str}
+```
 
-Here is your current visual perception from your VLM:
-"{visual_description}"
-
-Based *only* on this visual description, answer the following:
-- What is directly in front of you? (e.g., 'a wall', 'an open path', 'the green square')
-- Where is the goal (green square) relative to you? (e.g., 'to my right', 'to my bottom-left')
-
----
-**Step 2: Review Your Recent History**
-
-This is what you have done in the last few steps:
+**2. MEMORY (Recent History):**
 {memory_summary}
 
 ---
-**Step 3: Decide Your Next Action**
+**3. THINKING:**
+Based on your MISSION, PERCEPTION, and MEMORY, formulate a short-term plan or rationale for your next move. Your thought must be a single, concise sentence.
 
-Based on your analysis in Step 1 and your history from Step 2, choose the single best action.
+**4. ACTION:**
+Based on your THINKING, choose the single best action to take right now.
 
-- If the path ahead is clear and moves you towards the goal, choose `MOVE_FORWARD`.
-- If your path is blocked by an obstacle, you *must* turn. Choose `TURN_LEFT` or `TURN_RIGHT`.
-- If you are on the green square, you *must* choose `STOP`.
+Return your decision as a single, valid JSON object with two keys: "thought" and "action".
+- The "thought" value MUST be your one-sentence rationale from step 3.
+- The "action" value MUST be one of: {action_list}
 
-Available Actions:
-{action_list_with_descriptions}
+Example:
+{{
+  "thought": "My perception shows the goal is to my front-left and my path is clear, so I will turn left to face it.",
+  "action": "TURN_LEFT"
+}}
 
-Return your answer as a single, valid JSON object with only the "action" key.
-Example: {{"action": "MOVE_FORWARD"}}
-
-Now, provide ONLY the JSON object for your chosen action.
+Now, provide ONLY the JSON object for your decision.
 JSON:
 """
-    return prompt
 
 def get_outcome_from_reward(reward: float) -> str:
     """Translates a numeric reward into a human-readable outcome for MiniGrid."""
@@ -82,19 +80,24 @@ def get_outcome_from_reward(reward: float) -> str:
         return "Inefficient move (no progress)"
 
 def create_memory_summary(memory: Deque[Dict[str, Any]]) -> str:
-    """Creates a summarized string of the agent's recent memory for MiniGrid."""
+    """
+    Creates a summarized string of the agent's recent memory, including thoughts
+    and quantitative rewards.
+    """
     if not memory:
         return "No history yet."
     
-    summary = (
-        "\nYour goal is to reach the green square. Here is a summary of your last few actions:\n"
-    )
+    summary = "This is a summary of your last few steps:\n"
     
     for entry in memory:
+        # Round the reward for cleaner display
+        reward_str = f"{entry['reward']:.2f}"
         summary += (
-            f"  - Step {entry['step']}: You chose '{entry['action_name']}'. "
-            f"Outcome: {entry['outcome']} (Reward: {entry['reward']:.2f}).\n"
+            f"- Step {entry['step']}: "
+            f"You thought: \"{entry['thought']}\" | "
+            f"You chose: '{entry['action_name']}' | "
+            f"Outcome: {entry['outcome']} (Reward: {reward_str})\n"
         )
         
-    summary += "\nConsidering this history, what is the optimal action to take next?\n"
+    summary += "Use this history to inform your next thought."
     return summary

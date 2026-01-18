@@ -66,7 +66,8 @@ class OllamaVLMRuntime(BaseModelRuntime):
                 "model": config.OLLAMA_VLM_MODEL,
                 "prompt": prompt,
                 "images": [img_base64],
-                "stream": False # Get the full response at once
+                "stream": False, # Get the full response at once
+                # "format": "json"  # Explicitly request JSON output
             }
 
             api_url = f"{config.OLLAMA_BASE_URL}/api/generate"
