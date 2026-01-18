@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 load_dotenv(dotenv_path="configs/main.env")
 
 # --- Runtime Configuration ---
-RUNTIME = os.getenv("RUNTIME", "mlx")
+RUNTIME = os.getenv("RUNTIME", "ollama")
 
 # --- Agent Model Type ---
 AGENT_MODEL_TYPE = os.getenv("AGENT_MODEL_TYPE", "vlm")
@@ -27,7 +27,7 @@ GYM_ENVIRONMENT = os.getenv("GYM_ENVIRONMENT", "MiniGrid-Empty-5x5-v0")
 RENDER_MODE = os.getenv("RENDER_MODE", "rgb_array")
 
 # --- Agent Run Configuration ---
-MAX_STEPS = int(os.getenv("MAX_STEPS", 100))
+MAX_STEPS = int(os.getenv("MAX_STEPS", 10))
 INSTRUCTION = os.getenv("INSTRUCTION", "Explore the room.")
 MEMORY_LENGTH = int(os.getenv("MEMORY_LENGTH", 5)) # Number of past steps to remember
 

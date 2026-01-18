@@ -12,20 +12,23 @@ from .context import AgentContext
 def _parse_markdown_kv(markdown_text: str) -> Dict[str, str]:
     """
     Parses a simple markdown key-value list into a dictionary.
-    Example: "- **Key**: [Value]" -> {"Key": "Value"}
+    This version is more robust to variations in model output.
+    It handles optional bolding of keys and optional brackets around values.
     """
     data = {}
-    # Regex to find key-value pairs within brackets
-    pattern = re.compile(r"-\s*\*\*(.*?)\*\*:\s*\[(.*?)\]")
-    matches = pattern.findall(markdown_text)
+    # Regex to find key-value pairs, more forgiving.
+    pattern = re.compile(r"-\s*\**(.+?)\**\s*:\s*\[?(.+?)\]?\s*?$")
     
-    for key, value in matches:
-        clean_key = key.strip()
-        clean_value = value.strip()
-        # Create a more pythonic key, e.g., "Agent Orientation" -> "agent_orientation"
-        pythonic_key = clean_key.lower().replace(' ', '_')
-        data[pythonic_key] = clean_value
-        
+    for line in markdown_text.split('\n'):
+        match = pattern.match(line.strip())
+        if match:
+            key = match.group(1).strip()
+            value = match.group(2).strip()
+            
+            # Create a more pythonic key
+            pythonic_key = key.lower().replace(' ', '_')
+            data[pythonic_key] = value
+            
     return data
 
 def get_decision_from_prompt(prompt: str, llm_runtime: Any) -> Dict[str, str]:
@@ -34,14 +37,14 @@ def get_decision_from_prompt(prompt: str, llm_runtime: Any) -> Dict[str, str]:
     with a dynamic prompt and parsing the markdown response.
     """
     raw_response = llm_runtime.get_model_response(prompt)
-    logging.debug(f"Raw model response: {raw_response}")
+    logging.info(f"Raw model response: {raw_response}")
 
     decision_dict = _parse_markdown_kv(raw_response)
     if not decision_dict:
-        raise RuntimeError("LLM did not return any identifiable structured data in markdown format")
+        raise RuntimeError(f"LLM did not return any identifiable structured data in markdown format. Raw response: '{raw_response}'")
     
     if "action" not in decision_dict:
-        raise RuntimeError("LLM response missing 'action' key in markdown structure")
+        raise RuntimeError(f"LLM response missing 'action' key in markdown structure. Raw response: '{raw_response}'")
 
     return decision_dict
 
@@ -72,14 +75,21 @@ class SimpleLoopAgent(BaseAgent):
             vlm_raw_response = ""
             if context.vlm_runtime:
                 visual_prompt = context.get_visual_prompt()
-                vlm_raw_response = context.vlm_runtime.get_model_response(visual_prompt, image_observation)
-                structured_perception = _parse_markdown_kv(vlm_raw_response)
-                logging.info(f"VLM perception (parsed): {structured_perception}")
+                logging.info(f"Visual prompt:\n{visual_prompt}")
+                try:
+                    vlm_raw_response = context.vlm_runtime.get_model_response(visual_prompt, image_observation)
+                    logging.info(f"VLM raw response: '{vlm_raw_response}'")
+                    structured_perception = _parse_markdown_kv(vlm_raw_response)
+                    logging.info(f"VLM perception (parsed): {structured_perception}")
+                except RuntimeError as e:
+                    logging.warning(f"VLM failed to provide perception: {e}. Proceeding without visual data.")
+                    # structured_perception will remain empty
 
             # 2. THINK and ACT
             memory_summary = context.memory_system.retrieve()
             # Pass the parsed dictionary to the prompt template
             prompt = context.get_prompt(config.INSTRUCTION, structured_perception, memory_summary)
+            logging.info(f"LLM prompt:\n{prompt}")
             
             try:
                 decision_dict = get_decision_from_prompt(prompt, context.llm_runtime)

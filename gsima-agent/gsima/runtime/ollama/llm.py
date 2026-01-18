@@ -57,7 +57,7 @@ class OllamaLLMRuntime(BaseModelRuntime):
             api_url = f"{config.OLLAMA_BASE_URL}/api/generate"
             logging.debug(f"Sending request to Ollama API at {api_url} with model {config.OLLAMA_LLM_MODEL}")
             
-            response = requests.post(api_url, json=payload, timeout=500)
+            response = requests.post(api_url, json=payload, timeout=290)
             response.raise_for_status() # Raise an exception for bad status codes
 
             response_data = response.json()

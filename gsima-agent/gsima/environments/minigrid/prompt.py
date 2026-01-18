@@ -1,7 +1,6 @@
 """
 Prompts and summaries for MiniGrid environments, designed for a 'Perceive-Think-Act' agent.
 """
-import json
 from typing import Deque, Dict, Any
 
 from gsima.environments.minigrid.schema import SUPPORTED_ACTIONS
@@ -10,17 +9,16 @@ def get_visual_prompt() -> str:
     """
     Returns a prompt that instructs the VLM to return a simple, human-readable
     Markdown list. This is more reliable for models that struggle with JSON.
+    This version is simplified to be more of a Q&A format for smaller models.
     """
     return (
-        "Analyze the provided grid world image from a top-down perspective. "
+        "You are a helpful assistant analyzing an image from a grid-world game. "
         "You are the red triangle. The goal is the green square. "
-        "Describe the scene using the following markdown format. Do not add any other explanations or text. "
-        "Provide your analysis inside the brackets. "
+        "Please answer the following questions about the scene in a markdown list. "
         "\n\n"
-        "### Scene Analysis\n"
-        "- **Agent Orientation**: [Your analysis: NORTH, SOUTH, EAST, or WEST]\n"
-        "- **Goal Relative Position**: [Your analysis: e.g., front-left, right, back]\n"
-        "- **Obstacle In Front**: [Your analysis: true or false]"
+        "- **Agent Orientation**: [What direction is the red triangle pointing? (NORTH, SOUTH, EAST, or WEST)]\n"
+        "- **Goal Relative Position**: [Where is the green square relative to the agent? (e.g., front, front-left, back-right)]\n"
+        "- **Obstacle In Front**: [Is there a wall or obstacle directly in front of the agent? (true or false)]"
     )
 
 def get_prompt(instruction: str, structured_perception: Dict[str, Any], memory_summary: str) -> str:
@@ -29,7 +27,9 @@ def get_prompt(instruction: str, structured_perception: Dict[str, Any], memory_s
     before it acts.
     """
     action_list = [action.name for action in SUPPORTED_ACTIONS]
-    perception_str = json.dumps(structured_perception, indent=2)
+    # Format the perception dictionary as a simple key-value string for the prompt
+    perception_items = [f"- {key.replace('_', ' ').title()}: {value}" for key, value in structured_perception.items()]
+    perception_str = "\n".join(perception_items) if perception_items else "No visual data available."
 
     return f"""You are an intelligent and methodical agent in a grid world. Your mission is to efficiently reach the green square.
 
@@ -42,32 +42,24 @@ You must follow this process:
 
 ---
 **1. PERCEPTION (from Vision Model):**
-```json
 {perception_str}
-```
 
 **2. MEMORY (Recent History):**
 {memory_summary}
 
 ---
-**3. THINKING:**
-Based on your MISSION, PERCEPTION, and MEMORY, formulate a short-term plan or rationale for your next move. Your thought must be a single, concise sentence.
+**3. THINKING AND ACTING:**
+Based on your MISSION, PERCEPTION, and MEMORY, provide your thought process and the single best action to take right now.
 
-**4. ACTION:**
-Based on your THINKING, choose the single best action to take right now.
-
-Return your decision as a single, valid JSON object with two keys: "thought" and "action".
-- The "thought" value MUST be your one-sentence rationale from step 3.
+Return your decision in a markdown list format.
+- The "thought" value MUST be your one-sentence rationale.
 - The "action" value MUST be one of: {action_list}
 
 Example:
-{{
-  "thought": "My perception shows the goal is to my front-left and my path is clear, so I will turn left to face it.",
-  "action": "TURN_LEFT"
-}}
+- **thought**: [My perception shows the goal is to my front-left and my path is clear, so I will turn left to face it.]
+- **action**: [TURN_LEFT]
 
-Now, provide ONLY the JSON object for your decision.
-JSON:
+Now, provide ONLY the markdown for your decision.
 """
 
 def get_outcome_from_reward(reward: float) -> str:
