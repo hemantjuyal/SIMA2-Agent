@@ -1,14 +1,9 @@
 # Environment variables
 .env
-
 # Python cache
 __pycache__/
 *.pyc
-
-# MLX model cache (if stored locally)
 *.safetensors
-
-# Recordings
 outputs/**
-
 configs/**
+.DS_Store
