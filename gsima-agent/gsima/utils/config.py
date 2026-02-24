@@ -1,25 +1,33 @@
 import os
 from dotenv import load_dotenv
 
-# Load environment variables from a .env file
-load_dotenv(dotenv_path="configs/main.env")
+# Get the directory of the current file
+current_dir = os.path.dirname(os.path.abspath(__file__))
+# Construct the path to the main.env file relative to the current file
+dotenv_path = os.path.join(current_dir, "../../configs/main.env")
+load_dotenv(dotenv_path=dotenv_path)
 
 # --- Runtime Configuration ---
 RUNTIME = os.getenv("RUNTIME", "ollama")
 
-# --- Agent Model Type ---
-AGENT_MODEL_TYPE = os.getenv("AGENT_MODEL_TYPE", "vlm")
+# --- Agent Architecture ---
+AGENT_ARCH = os.getenv("AGENT_ARCH", "world_model")
 
-# --- LLM Model Configuration ---
-LLM_MODEL_ID = os.getenv("LLM_MODEL_ID", "mlx-community/Qwen3-8B-Instruct-4bit")
+# --- VLM Model Configuration (for Perception) ---
+PERCEPTION_MODEL_ID = os.getenv("PERCEPTION_MODEL_ID", "mlx-community/llava-v1.6-mistral-7b-4bit")
 
-# --- VLM Model Configuration ---
-VLM_MODEL_ID = os.getenv("VLM_MODEL_ID", "mlx-community/llava-v1.6-mistral-7b-4bit")
+# --- LLM Model Configuration (for Simulator & Controller) ---
+SIMULATOR_MODEL_ID = os.getenv("SIMULATOR_MODEL_ID", "mlx-community/Qwen3-0.6B")
+CONTROLLER_MODEL_ID = os.getenv("CONTROLLER_MODEL_ID", "mlx-community/Qwen3-1.7B-4bit")
 
 # --- Ollama Configuration ---
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_VLM_MODEL = os.getenv("OLLAMA_VLM_MODEL", "qwen3-vl:4b")
-OLLAMA_LLM_MODEL = os.getenv("OLLAMA_LLM_MODEL", "qwen3:4b")
+OLLAMA_PERCEPTION_MODEL = os.getenv("OLLAMA_PERCEPTION_MODEL", "llava:latest")
+OLLAMA_SIMULATOR_MODEL = os.getenv("OLLAMA_SIMULATOR_MODEL", "qwen3:0.6b")
+OLLAMA_CONTROLLER_MODEL = os.getenv("OLLAMA_CONTROLLER_MODEL", "qwen3:1.7b")
+OLLAMA_REQUEST_TIMEOUT = int(os.getenv("OLLAMA_REQUEST_TIMEOUT", 300)) # Default to 5 minutes
+OLLAMA_CONTEXT_SIZE = int(os.getenv("OLLAMA_CONTEXT_SIZE", 8192)) # Default to 8k tokens
+
 
 
 # --- Environment Configuration ---

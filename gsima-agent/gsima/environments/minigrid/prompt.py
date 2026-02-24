@@ -21,15 +21,81 @@ def get_visual_prompt() -> str:
         "- **Obstacle In Front**: [Is there a wall or obstacle directly in front of the agent? (true or false)]"
     )
 
-def get_prompt(instruction: str, structured_perception: Dict[str, Any], memory_summary: str) -> str:
+def get_simulator_prompt(current_state: Dict[str, Any], hypothetical_action: str) -> str:
     """
-    Dynamically generates the main prompt for the LLM, instructing it to think
-    before it acts.
+    Generates a prompt for the Simulator LLM to predict the next state.
+    
+    Args:
+        current_state: A dictionary representing the perceived current state of the environment.
+        hypothetical_action: The action the simulator should imagine taking.
+    """
+    # Format the current_state dictionary as a simple key-value string for the prompt
+    state_items = [f"- {key.replace('_', ' ').title()}: {value}" for key, value in current_state.items()]
+    state_str = "\n".join(state_items) if state_items else "No current state data available."
+
+    action_list = [action.name for action in SUPPORTED_ACTIONS]
+
+    return f"""You are a world model simulator in a grid world. Your task is to predict the *immediate next state* of the environment if the agent takes a specific hypothetical action from the current state.
+
+**ENVIRONMENT RULES:**
+- The agent can move FORWARD, TURN_LEFT, TURN_RIGHT, or STOP.
+- Walls are solid and cannot be moved through.
+- If a 'MOVE_FORWARD' action is attempted into a wall or obstacle, the agent's position will NOT change.
+- Turning left or right changes the agent's orientation (NORTH, EAST, SOUTH, WEST).
+- Moving forward changes the agent's position in the direction it's facing, unless blocked by an obstacle.
+- The goal is the green square.
+- Possible actions: {action_list}
+
+---
+**CURRENT STATE (PERCEPTION):**
+{state_str}
+
+**HYPOTHETICAL ACTION:**
+- Action to Simulate: {hypothetical_action}
+
+---
+**PREDICTION:**
+Based on the CURRENT STATE and the HYPOTHETICAL ACTION, predict the *new state* of the environment.
+Return your prediction in a markdown list format, similar to the PERCEPTION format.
+Only include keys that are directly affected or can be inferred to change by the hypothetical action.
+You MUST include 'Agent Orientation', 'Goal Relative Position', and 'Obstacle In Front' in your prediction if they would change or can be reasonably inferred.
+
+Example (if agent turns left from facing SOUTH, and obstacle is now in front):
+- **Agent Orientation**: [EAST]
+- **Goal Relative Position**: [front]
+- **Obstacle In Front**: [true]
+
+Now, provide ONLY the markdown for your predicted new state.
+"""
+
+def get_controller_prompt(instruction: str, structured_perception: Dict[str, Any], memory_summary: str, imagined_futures: Dict[str, Dict[str, str]]) -> str:
+    """
+    Dynamically generates the main prompt for the Controller LLM, instructing it to plan
+    before it acts by evaluating imagined futures.
+    
+    Args:
+        instruction: The high-level instruction for the agent.
+        structured_perception: A dictionary representing the perceived current state of the environment.
+        memory_summary: A summarized string of the agent's recent experiences.
+        imagined_futures: A dictionary where keys are actions and values are the predicted next states
+                          if that action were taken.
     """
     action_list = [action.name for action in SUPPORTED_ACTIONS]
+    
     # Format the perception dictionary as a simple key-value string for the prompt
     perception_items = [f"- {key.replace('_', ' ').title()}: {value}" for key, value in structured_perception.items()]
     perception_str = "\n".join(perception_items) if perception_items else "No visual data available."
+
+    # Format imagined futures
+    imagined_futures_str = ""
+    if imagined_futures:
+        for action, predicted_state in imagined_futures.items():
+            imagined_futures_str += f"**If I choose action: {action}**\n"
+            for key, value in predicted_state.items():
+                imagined_futures_str += f"- {key.replace('_', ' ').title()}: {value}\n"
+            imagined_futures_str += "\n"
+    else:
+        imagined_futures_str = "No imagined futures available."
 
     return f"""You are an intelligent and methodical agent in a grid world. Your mission is to efficiently reach the green square.
 
@@ -37,8 +103,9 @@ def get_prompt(instruction: str, structured_perception: Dict[str, Any], memory_s
 
 You must follow this process:
 1.  **Analyze** your current situation from PERCEPTION and MEMORY.
-2.  **THINK** and formulate a clear, one-sentence rationale for your next move.
-3.  **ACT** by choosing a single action based on your thought.
+2.  **IMAGINE** the possible outcomes of different actions (provided below as IMAGINED FUTURES).
+3.  **PLAN** and formulate a clear, one-sentence rationale for your next move, considering the IMAGINED FUTURES and your MISSION.
+4.  **ACT** by choosing a single action based on your plan.
 
 ---
 **1. PERCEPTION (from Vision Model):**
@@ -47,16 +114,19 @@ You must follow this process:
 **2. MEMORY (Recent History):**
 {memory_summary}
 
+**3. IMAGINED FUTURES (Predicted by Simulator):**
+{imagined_futures_str}
+
 ---
-**3. THINKING AND ACTING:**
-Based on your MISSION, PERCEPTION, and MEMORY, provide your thought process and the single best action to take right now.
+**4. PLANNING AND ACTING:**
+Based on your MISSION, PERCEPTION, MEMORY, and IMAGINED FUTURES, provide your thought process and the single best action to take right now. Prioritize actions that lead you closer to the green square. If no immediate path towards the goal is clear, consider actions that allow for exploration or re-orientation to gather more information.
 
 Return your decision in a markdown list format.
 - The "thought" value MUST be your one-sentence rationale.
 - The "action" value MUST be one of: {action_list}
 
 Example:
-- **thought**: [My perception shows the goal is to my front-left and my path is clear, so I will turn left to face it.]
+- **thought**: [My perception shows the goal is to my front-left and my path is clear, and imagining turning left brings me closer, so I will turn left to face it.]
 - **action**: [TURN_LEFT]
 
 Now, provide ONLY the markdown for your decision.

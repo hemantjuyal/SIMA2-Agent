@@ -5,6 +5,7 @@ This module handles inferencing with Language Models (LLM)
 served by an Ollama instance.
 """
 import logging
+import logging
 import requests
 from typing import Optional
 
@@ -12,28 +13,37 @@ from gsima.utils import config
 from gsima.runtime.base import BaseModelRuntime
 
 class OllamaLLMRuntime(BaseModelRuntime):
-    _instance = None
+    """
+    Handles inferencing with Language Models (LLM) served by an Ollama instance.
+    This is a non-singleton class, allowing multiple instances with different models.
+    """
 
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super(OllamaLLMRuntime, cls).__new__(cls)
-        return cls._instance
+    def __init__(self, model_id: str):
+        """
+        Initializes the runtime for a specific Ollama model.
 
-    def load_model(self):
+        Args:
+            model_id: The name of the Ollama model to use (e.g., 'qwen2:1.5b').
+        """
+        self.model_id = model_id
+        self.base_url = config.OLLAMA_BASE_URL
+        self._check_connection()
+
+    def _check_connection(self):
         """
         Checks if the Ollama service is running. This function doesn't load a model
         into memory but verifies connectivity to the Ollama server.
         """
-        logging.info(f"Checking connection to Ollama server at {config.OLLAMA_BASE_URL}...")
+        logging.info(f"Checking connection to Ollama server at {self.base_url}...")
         try:
-            response = requests.get(config.OLLAMA_BASE_URL, timeout=5)
+            response = requests.get(self.base_url, timeout=5)
             if response.status_code == 200:
                 logging.info("Ollama server is running.")
             else:
                 logging.warning(f"Ollama server returned status code {response.status_code}.")
         except requests.exceptions.RequestException as e:
             logging.error(f"Failed to connect to Ollama server: {e}")
-            raise RuntimeError(f"Could not connect to Ollama server at {config.OLLAMA_BASE_URL}")
+            raise RuntimeError(f"Could not connect to Ollama server at {self.base_url}")
 
     def get_model_response(self, prompt: str, image: Optional[bytes] = None) -> str:
         """
@@ -49,15 +59,18 @@ class OllamaLLMRuntime(BaseModelRuntime):
         try:
             # Construct the payload for the Ollama API
             payload = {
-                "model": config.OLLAMA_LLM_MODEL,
+                "model": self.model_id,
                 "prompt": prompt,
-                "stream": False # Get the full response at once
+                "stream": False, # Get the full response at once
+                "options": {
+                    "num_ctx": config.OLLAMA_CONTEXT_SIZE
+                }
             }
 
-            api_url = f"{config.OLLAMA_BASE_URL}/api/generate"
-            logging.debug(f"Sending request to Ollama API at {api_url} with model {config.OLLAMA_LLM_MODEL}")
+            api_url = f"{self.base_url}/api/generate"
+            logging.debug(f"Sending request to Ollama API at {api_url} with model {self.model_id}")
             
-            response = requests.post(api_url, json=payload, timeout=290)
+            response = requests.post(api_url, json=payload, timeout=config.OLLAMA_REQUEST_TIMEOUT)
             response.raise_for_status() # Raise an exception for bad status codes
 
             response_data = response.json()
@@ -72,9 +85,3 @@ class OllamaLLMRuntime(BaseModelRuntime):
         except Exception as e:
             logging.error(f"An unexpected error occurred during Ollama LLM call: {e}")
             raise RuntimeError(f"Unexpected error in Ollama LLM runtime: {e}")
-
-def get_ollama_llm_runtime():
-    """Returns the singleton instance of the OllamaLLMRuntime."""
-    runtime = OllamaLLMRuntime()
-    runtime.load_model()
-    return runtime

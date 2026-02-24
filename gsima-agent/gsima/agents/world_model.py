@@ -48,10 +48,11 @@ def get_decision_from_prompt(prompt: str, llm_runtime: Any) -> Dict[str, str]:
 
     return decision_dict
 
-class SimpleLoopAgent(BaseAgent):
+class WorldModelAgent(BaseAgent):
     """
-    A reactive agent that operates in a step-by-step observation-action loop.
-    This contains the primary execution logic.
+    A world model agent that implements the Perceive-Imagine-Plan-Act cycle.
+    This agent uses distinct models for perception, simulating future states,
+    and controlling actions based on imagined outcomes.
     """
 
     def run(self, context: AgentContext):
@@ -60,39 +61,70 @@ class SimpleLoopAgent(BaseAgent):
         context.memory_system.clear()
         logging.info("Environment reset and memory cleared.")
 
-        image_observation = context.env.render() if config.AGENT_MODEL_TYPE == "vlm" else None
-        
+        # Initial observation
+        initial_obs, info = context.env.reset()
+        context.memory_system.clear()
+        logging.info("Environment reset and memory cleared.")
+
+        # Obtain the RGB array for VLM perception
+        # We need to access the unwrapped env's render method for rgb_array if human/record mode is active,
+        # because the HumanRendering/RecordVideo wrappers just display/save, but the underlying env still produces rgb_array.
+        # If RENDER_MODE is already rgb_array, then context.env.render() directly returns it.
+        if config.RENDER_MODE == "human" or config.RENDER_MODE == "record":
+            rgb_array_observation = context.env.unwrapped.render()
+        else: # This case is when config.RENDER_MODE is directly "rgb_array" for the top-level env
+            rgb_array_observation = context.env.render()
+
         terminated, truncated, step_count = False, False, 0
 
         while not terminated and not truncated and step_count < config.MAX_STEPS:
             if config.RENDER_MODE == "human":
-                context.env.render()
+                context.env.render() # This is for displaying the human view
                 
             logging.info(f"--- Step {step_count + 1}/{config.MAX_STEPS} ---")
 
-            # 1. PERCEIVE the environment
+            # 1. PERCEIVE the environment (using Perception VLM)
             structured_perception = {}
             vlm_raw_response = ""
-            if context.vlm_runtime:
-                visual_prompt = context.get_visual_prompt()
-                logging.info(f"Visual prompt:\n{visual_prompt}")
-                try:
-                    vlm_raw_response = context.vlm_runtime.get_model_response(visual_prompt, image_observation)
-                    logging.info(f"VLM raw response: '{vlm_raw_response}'")
-                    structured_perception = _parse_markdown_kv(vlm_raw_response)
-                    logging.info(f"VLM perception (parsed): {structured_perception}")
-                except RuntimeError as e:
-                    logging.warning(f"VLM failed to provide perception: {e}. Proceeding without visual data.")
-                    # structured_perception will remain empty
+            visual_prompt = context.get_visual_prompt()
+            logging.info(f"Visual prompt:\n{visual_prompt}")
+            try:
+                # Use perception_runtime for VLM, passing the collected rgb_array_observation
+                vlm_raw_response = context.perception_runtime.get_model_response(visual_prompt, rgb_array_observation)
+                logging.info(f"VLM raw response: '{vlm_raw_response}'")
+                structured_perception = _parse_markdown_kv(vlm_raw_response)
+                logging.info(f"VLM perception (parsed): {structured_perception}")
+            except RuntimeError as e:
+                logging.warning(f"Perception VLM failed: {e}. Proceeding without visual data for this step.")
+                # structured_perception will remain empty
 
-            # 2. THINK and ACT
+            # 2. IMAGINE & PLAN (using Simulator LLM and Controller LLM)
             memory_summary = context.memory_system.retrieve()
-            # Pass the parsed dictionary to the prompt template
-            prompt = context.get_prompt(config.INSTRUCTION, structured_perception, memory_summary)
-            logging.info(f"LLM prompt:\n{prompt}")
+            
+            # --- Imagine Phase ---
+            imagined_futures = {}
+            possible_actions = context.adapter.get_canonical_actions() # Assuming adapter has this method
+            
+            for action in possible_actions:
+                simulator_prompt = context.get_simulator_prompt(structured_perception, action.name)
+                logging.debug(f"Simulator LLM prompt for action '{action.name}':\n{simulator_prompt}")
+                try:
+                    # Use simulator_runtime for predicting next state
+                    simulated_next_state_raw = context.simulator_runtime.get_model_response(simulator_prompt)
+                    simulated_next_state = _parse_markdown_kv(simulated_next_state_raw)
+                    imagined_futures[action.name] = simulated_next_state
+                    logging.debug(f"Simulated next state for '{action.name}': {simulated_next_state}")
+                except RuntimeError as e:
+                    logging.warning(f"Simulator LLM failed for action '{action.name}': {e}")
+                    # If simulator fails, that action's future is not imagined
+            
+            # --- Plan Phase ---
+            controller_prompt = context.get_controller_prompt(config.INSTRUCTION, structured_perception, memory_summary, imagined_futures)
+            logging.info(f"Controller LLM prompt:\n{controller_prompt}")
             
             try:
-                decision_dict = get_decision_from_prompt(prompt, context.llm_runtime)
+                # Use controller_runtime for action decision
+                decision_dict = get_decision_from_prompt(controller_prompt, context.controller_runtime)
                 thought = decision_dict.get("thought", "N/A")
                 action_name = decision_dict.get("action")
 
@@ -133,8 +165,12 @@ class SimpleLoopAgent(BaseAgent):
 
             initial_obs = observation
             
-            if context.vlm_runtime and not (terminated or truncated):
-                image_observation = context.env.render()
+            # VLM perception is always used by the world model agent
+            if not (terminated or truncated):
+                if config.RENDER_MODE == "human" or config.RENDER_MODE == "record":
+                    rgb_array_observation = context.env.unwrapped.render()
+                else:
+                    rgb_array_observation = context.env.render()
 
             logging.info(f"Executed action: {action_name}, Reward: {reward:.2f}, Outcome: {outcome}")
             step_count += 1

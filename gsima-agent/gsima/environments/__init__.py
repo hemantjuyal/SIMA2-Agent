@@ -49,8 +49,9 @@ def create_env_and_adapter() -> tuple:
         adapter_class = getattr(adapter_module, adapter_class_name)
 
         prompt_module = importlib.import_module(f"gsima.environments.{env_type}.prompt")
-        get_prompt_func = getattr(prompt_module, "get_prompt")
         get_visual_prompt_func = getattr(prompt_module, "get_visual_prompt")
+        get_simulator_prompt_func = getattr(prompt_module, "get_simulator_prompt")
+        get_controller_prompt_func = getattr(prompt_module, "get_controller_prompt")
         get_outcome_from_reward_func = getattr(prompt_module, "get_outcome_from_reward")
         create_memory_summary_func = getattr(prompt_module, "create_memory_summary")
 
@@ -63,7 +64,8 @@ def create_env_and_adapter() -> tuple:
     logging.info(f"Created and configured memory system: {type(memory_system).__name__}")
 
     # --- Gym Environment Creation ---
-    gym_make_render_mode = "rgb_array" if config.AGENT_MODEL_TYPE == "vlm" else config.RENDER_MODE
+    # The base environment must be 'rgb_array' for VLM perception and wrappers to work.
+    gym_make_render_mode = "rgb_array" 
     logging.info(f"Creating Gym environment '{env_name}' with base render_mode='{gym_make_render_mode}'")
     
     try:
@@ -91,8 +93,9 @@ def create_env_and_adapter() -> tuple:
         env,
         adapter,
         memory_system,
-        get_prompt_func,
         get_visual_prompt_func,
+        get_simulator_prompt_func,
+        get_controller_prompt_func,
         get_outcome_from_reward_func,
     )
 

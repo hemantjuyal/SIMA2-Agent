@@ -10,3 +10,8 @@ class BaseAdapter(ABC):
     def translate_action(self, action_name: str) -> any:
         """Translates a canonical action name into an env-specific action."""
         pass
+
+    @abstractmethod
+    def get_canonical_actions(self) -> list:
+        """Returns a list of canonical actions supported by the environment."""
+        pass

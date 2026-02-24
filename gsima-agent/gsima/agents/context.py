@@ -15,11 +15,13 @@ class AgentContext:
     """
     env: gym.Env
     adapter: BaseAdapter
-    vlm_runtime: BaseModelRuntime # Can be None if AGENT_MODEL_TYPE is llm
-    llm_runtime: BaseModelRuntime
+    perception_runtime: BaseModelRuntime # The VLM for observing the world
+    simulator_runtime: BaseModelRuntime  # The LLM for predicting future states
+    controller_runtime: BaseModelRuntime # The LLM for selecting the best action
     memory_system: BaseMemory
     
     # Environment-specific functions
-    get_prompt: Callable
     get_visual_prompt: Callable
+    get_simulator_prompt: Callable
+    get_controller_prompt: Callable
     get_outcome_from_reward: Callable
