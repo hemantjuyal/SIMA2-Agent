@@ -15,11 +15,9 @@ def log_configuration():
 
     if config.RUNTIME == "ollama":
         logging.info(f"OLLAMA_PERCEPTION_MODEL: {config.OLLAMA_PERCEPTION_MODEL}")
-        logging.info(f"OLLAMA_SIMULATOR_MODEL: {config.OLLAMA_SIMULATOR_MODEL}")
         logging.info(f"OLLAMA_CONTROLLER_MODEL: {config.OLLAMA_CONTROLLER_MODEL}")
     else: # Default to mlx
         logging.info(f"PERCEPTION_MODEL_ID: {config.PERCEPTION_MODEL_ID}")
-        logging.info(f"SIMULATOR_MODEL_ID: {config.SIMULATOR_MODEL_ID}")
         logging.info(f"CONTROLLER_MODEL_ID: {config.CONTROLLER_MODEL_ID}")
     
     logging.info(f"GYM_ENVIRONMENT: {config.GYM_ENVIRONMENT}")
@@ -44,14 +42,11 @@ def main():
             else:
                 perception_runtime = runtime_factory.create_runtime(config.RUNTIME, "vlm", config.PERCEPTION_MODEL_ID)
         
-        simulator_runtime = None
         controller_runtime = None
 
         if config.RUNTIME == "ollama":
-            simulator_runtime = runtime_factory.create_runtime(config.RUNTIME, "llm", config.OLLAMA_SIMULATOR_MODEL)
             controller_runtime = runtime_factory.create_runtime(config.RUNTIME, "llm", config.OLLAMA_CONTROLLER_MODEL)
         else: # mlx
-            simulator_runtime = runtime_factory.create_runtime(config.RUNTIME, "llm", config.SIMULATOR_MODEL_ID)
             controller_runtime = runtime_factory.create_runtime(config.RUNTIME, "llm", config.CONTROLLER_MODEL_ID)
         
         (
@@ -59,7 +54,6 @@ def main():
             adapter,
             memory_system,
             get_visual_prompt,
-            get_simulator_prompt,
             get_controller_prompt,
             get_outcome_from_reward,
         ) = environments.create_env_and_adapter()
@@ -69,11 +63,9 @@ def main():
             env=env,
             adapter=adapter,
             perception_runtime=perception_runtime,
-            simulator_runtime=simulator_runtime,
             controller_runtime=controller_runtime,
             memory_system=memory_system,
             get_visual_prompt=get_visual_prompt,
-            get_simulator_prompt=get_simulator_prompt,
             get_controller_prompt=get_controller_prompt,
             get_outcome_from_reward=get_outcome_from_reward,
         )

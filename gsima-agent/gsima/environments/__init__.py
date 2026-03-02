@@ -1,6 +1,7 @@
 import os
 import importlib
 import logging
+import datetime
 import gymnasium as gym
 from gymnasium.wrappers import RecordVideo, HumanRendering
 
@@ -50,7 +51,6 @@ def create_env_and_adapter() -> tuple:
 
         prompt_module = importlib.import_module(f"gsima.environments.{env_type}.prompt")
         get_visual_prompt_func = getattr(prompt_module, "get_visual_prompt")
-        get_simulator_prompt_func = getattr(prompt_module, "get_simulator_prompt")
         get_controller_prompt_func = getattr(prompt_module, "get_controller_prompt")
         get_outcome_from_reward_func = getattr(prompt_module, "get_outcome_from_reward")
         create_memory_summary_func = getattr(prompt_module, "create_memory_summary")
@@ -84,9 +84,14 @@ def create_env_and_adapter() -> tuple:
     if config.RENDER_MODE == "human":
         env = HumanRendering(env)
     elif config.RENDER_MODE == "record":
-        os.makedirs(config.RECORDING_DIR, exist_ok=True)
-        env = RecordVideo(env, video_folder=config.RECORDING_DIR, name_prefix=env_name)
-        logging.info(f"Video recordings will be saved to '{config.RECORDING_DIR}'.")
+        # Create a unique sub-folder for this run using a timestamp
+        run_timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        run_video_dir = os.path.join(config.RECORDING_DIR, f"{env_name}_{run_timestamp}")
+        os.makedirs(run_video_dir, exist_ok=True)
+        
+        # The name_prefix is now less important as the folder is unique
+        env = RecordVideo(env, video_folder=run_video_dir, name_prefix="episode")
+        logging.info(f"Video recordings will be saved to '{run_video_dir}'.")
 
     logging.info(f"Environment '{env_name}' and components created successfully.")
     return (
@@ -94,7 +99,6 @@ def create_env_and_adapter() -> tuple:
         adapter,
         memory_system,
         get_visual_prompt_func,
-        get_simulator_prompt_func,
         get_controller_prompt_func,
         get_outcome_from_reward_func,
     )

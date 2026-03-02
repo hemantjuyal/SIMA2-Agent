@@ -101,21 +101,18 @@ class WorldModelAgent(BaseAgent):
             # 2. IMAGINE & PLAN (using Simulator LLM and Controller LLM)
             memory_summary = context.memory_system.retrieve()
             
-            # --- Imagine Phase ---
+            # --- Imagine Phase (using Deterministic Simulator) ---
+            logging.info("Imagining future states with deterministic simulator...")
             imagined_futures = {}
-            possible_actions = context.adapter.get_canonical_actions() # Assuming adapter has this method
+            possible_actions = context.adapter.get_canonical_actions()
             
             for action in possible_actions:
-                simulator_prompt = context.get_simulator_prompt(structured_perception, action.name)
-                logging.debug(f"Simulator LLM prompt for action '{action.name}':\n{simulator_prompt}")
                 try:
-                    # Use simulator_runtime for predicting next state
-                    simulated_next_state_raw = context.simulator_runtime.get_model_response(simulator_prompt)
-                    simulated_next_state = _parse_markdown_kv(simulated_next_state_raw)
+                    simulated_next_state = context.adapter.simulate_next_state(action.name)
                     imagined_futures[action.name] = simulated_next_state
                     logging.debug(f"Simulated next state for '{action.name}': {simulated_next_state}")
-                except RuntimeError as e:
-                    logging.warning(f"Simulator LLM failed for action '{action.name}': {e}")
+                except Exception as e:
+                    logging.error(f"Deterministic simulator failed for action '{action.name}': {e}")
                     # If simulator fails, that action's future is not imagined
             
             # --- Plan Phase ---

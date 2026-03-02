@@ -30,10 +30,8 @@ class BaseAgentTests(unittest.TestCase, ABC):
         self.env: gym.Env = None
         self.adapter = None
         self.perception_runtime: MagicMock = None
-        self.simulator_runtime: MagicMock = None
         self.controller_runtime: MagicMock = None
         self.get_visual_prompt: callable = None
-        self.get_simulator_prompt: callable = None
         self.get_controller_prompt: callable = None
         self.get_outcome_from_reward: callable = None
         self.create_memory_summary: callable = None
@@ -46,10 +44,8 @@ class BaseAgentTests(unittest.TestCase, ABC):
         self.assertIsNotNone(self.env, "Environment (env) was not initialized in setUp.")
         self.assertIsNotNone(self.adapter, "Adapter was not initialized in setUp.")
         self.assertIsNotNone(self.perception_runtime, "Perception Runtime was not initialized in setUp.")
-        self.assertIsNotNone(self.simulator_runtime, "Simulator Runtime was not initialized in setUp.")
         self.assertIsNotNone(self.controller_runtime, "Controller Runtime was not initialized in setUp.")
         self.assertIsNotNone(self.get_visual_prompt, "get_visual_prompt function was not initialized.")
-        self.assertIsNotNone(self.get_simulator_prompt, "get_simulator_prompt function was not initialized.")
         self.assertIsNotNone(self.get_controller_prompt, "get_controller_prompt function was not initialized.")
 
     def tearDown(self):

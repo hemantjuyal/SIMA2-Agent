@@ -21,52 +21,7 @@ def get_visual_prompt() -> str:
         "- **Obstacle In Front**: [Is there a wall or obstacle directly in front of the agent? (true or false)]"
     )
 
-def get_simulator_prompt(current_state: Dict[str, Any], hypothetical_action: str) -> str:
-    """
-    Generates a prompt for the Simulator LLM to predict the next state.
-    
-    Args:
-        current_state: A dictionary representing the perceived current state of the environment.
-        hypothetical_action: The action the simulator should imagine taking.
-    """
-    # Format the current_state dictionary as a simple key-value string for the prompt
-    state_items = [f"- {key.replace('_', ' ').title()}: {value}" for key, value in current_state.items()]
-    state_str = "\n".join(state_items) if state_items else "No current state data available."
 
-    action_list = [action.name for action in SUPPORTED_ACTIONS]
-
-    return f"""You are a world model simulator in a grid world. Your task is to predict the *immediate next state* of the environment if the agent takes a specific hypothetical action from the current state.
-
-**ENVIRONMENT RULES:**
-- The agent can move FORWARD, TURN_LEFT, TURN_RIGHT, or STOP.
-- Walls are solid and cannot be moved through.
-- If a 'MOVE_FORWARD' action is attempted into a wall or obstacle, the agent's position will NOT change.
-- Turning left or right changes the agent's orientation (NORTH, EAST, SOUTH, WEST).
-- Moving forward changes the agent's position in the direction it's facing, unless blocked by an obstacle.
-- The goal is the green square.
-- Possible actions: {action_list}
-
----
-**CURRENT STATE (PERCEPTION):**
-{state_str}
-
-**HYPOTHETICAL ACTION:**
-- Action to Simulate: {hypothetical_action}
-
----
-**PREDICTION:**
-Based on the CURRENT STATE and the HYPOTHETICAL ACTION, predict the *new state* of the environment.
-Return your prediction in a markdown list format, similar to the PERCEPTION format.
-Only include keys that are directly affected or can be inferred to change by the hypothetical action.
-You MUST include 'Agent Orientation', 'Goal Relative Position', and 'Obstacle In Front' in your prediction if they would change or can be reasonably inferred.
-
-Example (if agent turns left from facing SOUTH, and obstacle is now in front):
-- **Agent Orientation**: [EAST]
-- **Goal Relative Position**: [front]
-- **Obstacle In Front**: [true]
-
-Now, provide ONLY the markdown for your predicted new state.
-"""
 
 def get_controller_prompt(instruction: str, structured_perception: Dict[str, Any], memory_summary: str, imagined_futures: Dict[str, Dict[str, str]]) -> str:
     """
@@ -114,20 +69,22 @@ You must follow this process:
 **2. MEMORY (Recent History):**
 {memory_summary}
 
-**3. IMAGINED FUTURES (Predicted by Simulator):**
+**3. IMAGINED FUTURES (Predicted by Internal Model):**
 {imagined_futures_str}
 
 ---
 **4. PLANNING AND ACTING:**
-Based on your MISSION, PERCEPTION, MEMORY, and IMAGINED FUTURES, provide your thought process and the single best action to take right now. Prioritize actions that lead you closer to the green square. If no immediate path towards the goal is clear, consider actions that allow for exploration or re-orientation to gather more information.
+Based on your MISSION, PERCEPTION, MEMORY, and IMAGINED FUTURES, provide your thought process and the single best action to take right now. Prioritize actions that lead you closer to the green square. Use the IMAGINED FUTURES to see which action actually improves your position or orientation.
+
+**CRITICAL:** Do NOT simply repeat thoughts from previous steps or the example below. Every step is a new situation.
 
 Return your decision in a markdown list format.
-- The "thought" value MUST be your one-sentence rationale.
+- The "thought" value MUST be your unique one-sentence rationale for THIS step.
 - The "action" value MUST be one of: {action_list}
 
-Example:
-- **thought**: [My perception shows the goal is to my front-left and my path is clear, and imagining turning left brings me closer, so I will turn left to face it.]
-- **action**: [TURN_LEFT]
+Example (DO NOT COPY THIS TEXT):
+- **thought**: [The goal is to my right and the path is clear, so I will turn right to face it.]
+- **action**: [TURN_RIGHT]
 
 Now, provide ONLY the markdown for your decision.
 """
