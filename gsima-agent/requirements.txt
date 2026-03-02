@@ -7,3 +7,5 @@ python-dotenv
 requests
 pytest
 numpy
+torch
+torchvision
