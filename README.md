@@ -1,6 +1,6 @@
 # SIMA2-Agent
 
-A modular, multi-modal agent framework for Gymnasium environments, inspired by generalist agent architectures like Google's SIMA. This project provides a robust, extensible foundation for developing intelligent agents that can **Perceive, Imagine, Plan, and Act** in simulated worlds.
+A modular, multi-modal agent experimental framework for Gymnasium environments, inspired by generalist agent concept like Google's SIMA. This project provides a robust, extensible foundation for developing intelligent agents that can **Perceive, Imagine, Plan, and Act** in simulated worlds.
 
 ## Background and Purpose
 
@@ -8,11 +8,13 @@ The **SIMA2-Agent** (Scalable, Instructable, Multiworld Agent) is an experimenta
 
 Unlike traditional Reinforcement Learning agents that rely on black-box policies, SIMA2-Agent implements a **World Model** approach. By utilizing Vision-Language Models (VLM) for perception and Large Language Models (LLM) for strategic planning, the agent can understand complex instructions, "imagine" the consequences of its actions before taking them, and articulate its reasoning process in natural language.
 
+#### SIMA2 Agent Play
+
 <table>
   <tr>
     <td><img src="https://github.com/hemantjuyal/SIMA2-Agent/blob/SIMA2Agent-WM/gsima-agent/output/recordings/MiniGrid-Empty-8x8-1.gif" width="400" alt="Play-1"></td>
-    <td><img src="https://github.com/hemantjuyal/SIMA2-Agent/blob/SIMA2Agent-WM/gsima-agent/output/recordings/MiniGrid-Empty-8x8-2.gif" width="400" alt="Play-2"></td>
     <td><img src="https://github.com/hemantjuyal/SIMA2-Agent/blob/SIMA2Agent-WM/gsima-agent/output/recordings/MiniGrid-Empty-8x8-3.gif" width="400" alt="Play-3"></td>
+    <td><img src="https://github.com/hemantjuyal/SIMA2-Agent/blob/SIMA2Agent-WM/gsima-agent/output/recordings/MiniGrid-Empty-8x8-2.gif" width="400" alt="Play-2"></td>
   </tr>
 </table>
 
@@ -26,7 +28,7 @@ Unlike traditional Reinforcement Learning agents that rely on black-box policies
 -   **Instruction-Driven:** Designed to follow natural language missions (e.g., "Navigate to the green square and stop").
 -   **Robust Memory System:** A summarization-based memory that feeds the agent's history, thoughts, and outcomes back into its decision-making process.
 
-## Architecture Flow Diagram
+## System Components & Flow Diagram
 
 The architecture is centered around the `AgentContext`, a dependency container that assembles all modular components for the agent execution.
 
