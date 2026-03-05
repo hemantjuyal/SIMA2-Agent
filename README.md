@@ -8,6 +8,15 @@ The **SIMA2-Agent** (Scalable, Instructable, Multiworld Agent) is an experimenta
 
 Unlike traditional Reinforcement Learning agents that rely on black-box policies, SIMA2-Agent implements a **World Model** approach. By utilizing Vision-Language Models (VLM) for perception and Large Language Models (LLM) for strategic planning, the agent can understand complex instructions, "imagine" the consequences of its actions before taking them, and articulate its reasoning process in natural language.
 
+<table>
+  <tr>
+    <td><img src="https://github.com/hemantjuyal/SIMA2-Agent/blob/SIMA2Agent-WM/gsima-agent/output/recordings/MiniGrid-Empty-8x8-1.gif" width="400" alt="Play-1"></td>
+    <td><img src="https://github.com/hemantjuyal/SIMA2-Agent/blob/SIMA2Agent-WM/gsima-agent/output/recordings/MiniGrid-Empty-8x8-2.gif" width="400" alt="Play-2"></td>
+    <td><img src="https://github.com/hemantjuyal/SIMA2-Agent/blob/SIMA2Agent-WM/gsima-agent/output/recordings/MiniGrid-Empty-8x8-3.gif" width="400" alt="Play-3"></td>
+  </tr>
+</table>
+
+
 ## Key Features
 
 -   **Perceive-Imagine-Plan-Act Cycle:** An explicit reasoning loop where the agent observes the scene, simulates potential outcomes, plans its strategy, and finally executes an action.
