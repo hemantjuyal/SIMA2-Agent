@@ -1,14 +1,14 @@
-# SIMA2-Agent
+# SIMA2 Agent 
 
 A modular, multi-modal agent experimental framework for Gymnasium environments, inspired by generalist agent concept like Google's SIMA. This project provides a robust, extensible foundation for developing intelligent agents that can **Perceive, Imagine, Plan, and Act** in simulated worlds.
 
-## Background and Purpose
+### Background and Purpose
 
 The **SIMA2-Agent** (Scalable, Instructable, Multiworld Agent) is an experimental framework designed to bridge the gap between high-level language reasoning and low-level environment interaction. 
 
 Unlike traditional Reinforcement Learning agents that rely on black-box policies, SIMA2-Agent implements a **World Model** approach. By utilizing Vision-Language Models (VLM) for perception and Large Language Models (LLM) for strategic planning, the agent can understand complex instructions, "imagine" the consequences of its actions before taking them, and articulate its reasoning process in natural language.
 
-#### SIMA2 Agent Play
+### SIMA2 Agent Play
 
 <table>
   <tr>
@@ -19,7 +19,7 @@ Unlike traditional Reinforcement Learning agents that rely on black-box policies
 </table>
 
 
-## Key Features
+### Key Features
 
 -   **Perceive-Imagine-Plan-Act Cycle:** An explicit reasoning loop where the agent observes the scene, simulates potential outcomes, plans its strategy, and finally executes an action.
 -   **Modular "World Model" Architecture:** Core components (Agents, Environments, Memory, Runtimes) are fully decoupled, allowing for easy experimentation with different models and logic.
@@ -28,11 +28,12 @@ Unlike traditional Reinforcement Learning agents that rely on black-box policies
 -   **Instruction-Driven:** Designed to follow natural language missions (e.g., "Navigate to the green square and stop").
 -   **Robust Memory System:** A summarization-based memory that feeds the agent's history, thoughts, and outcomes back into its decision-making process.
 
-## System Components and Flow Diagram
+### System Components and Flow Diagram
 
 The architecture is centered around the `AgentContext`, a dependency container that assembles all modular components for the agent execution.
 
 ```mermaid
+%%{init: {'theme': 'neutral'}}%%
 graph TD
     subgraph "1. Initialization (main.py)"
         A[main.py] --> B{Factories};
@@ -75,9 +76,9 @@ graph TD
     end
 ```
 
-## Getting Started
+### Getting Started
 
-### 1. Installation
+#### 1. Installation
 
 This project uses `uv` for high-performance environment and package management.
 
@@ -93,7 +94,7 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 uv pip install -r gsima-agent/requirements.txt
 ```
 
-### 2. Configuration
+#### 2. Configuration
 
 All configuration is managed in `gsima-agent/configs/`.
 
@@ -106,7 +107,7 @@ Open `main.env` and configure your models. Recommended models for [Ollama](https
 - **Perception:** `llava:latest`
 - **Controller:** `qwen2.5:3b` or `qwen3:0.6b` (for faster inference)
 
-### 3. Running the Agent
+#### 3. Running the Agent
 
 Ensure your Ollama server is running (`ollama serve`).
 
@@ -118,7 +119,7 @@ python -m gsima.main
 
 Logs are stored in `outputs/logs/`, and video recordings of the agent's performance are saved to `outputs/recordings/`.
 
-### 4. Running Tests
+#### 4. Running Tests
 
 The test suite validates the modular architecture and agent logic without requiring live LLM calls.
 
