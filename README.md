@@ -28,7 +28,7 @@ Unlike traditional Reinforcement Learning agents that rely on black-box policies
 -   **Instruction-Driven:** Designed to follow natural language missions (e.g., "Navigate to the green square and stop").
 -   **Robust Memory System:** A summarization-based memory that feeds the agent's history, thoughts, and outcomes back into its decision-making process.
 
-## System Components & Flow Diagram
+## System Components and Flow Diagram
 
 The architecture is centered around the `AgentContext`, a dependency container that assembles all modular components for the agent execution.
 
