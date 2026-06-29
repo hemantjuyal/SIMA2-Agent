@@ -1,5 +1,6 @@
 gymnasium[other]
 minigrid
+vizdoom
 mlx
 mlx-lm
 mlx-vlm

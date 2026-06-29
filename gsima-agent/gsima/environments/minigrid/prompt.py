@@ -11,16 +11,16 @@ def get_visual_prompt() -> str:
     Markdown list. This is more reliable for models that struggle with JSON.
     This version is simplified to be more of a Q&A format for smaller models.
     """
+    # In the new architecture the VLM is only asked to provide semantic labels
+    # (e.g., triangle, keys, doors, lava); do NOT infer precise positions
+    # or numeric state. Keep answers short and in a markdown list.
     return (
-        "You are a helpful assistant analyzing an image from a grid-world game. "
-        "You are the red triangle. The goal is the green square. "
-        "Please answer the following questions about the scene in a markdown list. "
-        "\n\n"
-        "- **Agent Orientation**: [What direction is the red triangle pointing? (NORTH, SOUTH, EAST, or WEST)]\n"
-        "- **Goal Relative Position**: [Where is the green square relative to the agent? (e.g., front, front-left, back-right)]\n"
-        "- **Obstacle In Front**: [Is there a wall or obstacle directly in front of the agent? (true or false)]"
+        "You are a semantic image interpreter for a grid-world. "
+        "From the image, return only semantic facts that the simulator may not know. "
+        "Do NOT attempt to report agent coordinates, orientation, or exact goal coordinates. "
+        "Return a short markdown list with any of the following keys if present: Triangle, Square, Keys, Doors, Lava, Environment Description. "
+        "Examples: '- **Triangle**: a red triangle at the top-left', '- **Square**: a green square at the bottom-right', '- **Keys**: 1 key visible at top-left', '- **Doors**: a closed wooden door at the east wall', '- **Lava**: lava tiles near the goal'."
     )
-
 
 
 def get_controller_prompt(instruction: str, structured_perception: Dict[str, Any], memory_summary: str, imagined_futures: Dict[str, Dict[str, str]]) -> str:
@@ -41,11 +41,14 @@ def get_controller_prompt(instruction: str, structured_perception: Dict[str, Any
     perception_items = [f"- {key.replace('_', ' ').title()}: {value}" for key, value in structured_perception.items()]
     perception_str = "\n".join(perception_items) if perception_items else "No visual data available."
 
-    # Format imagined futures
+    # Format imagined futures with obstacle highlighting
     imagined_futures_str = ""
     if imagined_futures:
         for action, predicted_state in imagined_futures.items():
-            imagined_futures_str += f"**If I choose action: {action}**\n"
+            obstacle_flag = ""
+            if predicted_state.get('obstacle_in_front', '').lower() == 'true':
+                obstacle_flag = " ⚠️ WARNING: OBSTACLE AHEAD - AVOID THIS ACTION"
+            imagined_futures_str += f"**If I choose action: {action}**{obstacle_flag}\n"
             for key, value in predicted_state.items():
                 imagined_futures_str += f"- {key.replace('_', ' ').title()}: {value}\n"
             imagined_futures_str += "\n"
@@ -74,16 +77,21 @@ You must follow this process:
 
 ---
 **4. PLANNING AND ACTING:**
-Based on your MISSION, PERCEPTION, MEMORY, and IMAGINED FUTURES, provide your thought process and the single best action to take right now. Prioritize actions that lead you closer to the green square. Use the IMAGINED FUTURES to see which action actually improves your position or orientation.
+Based on your MISSION, PERCEPTION, MEMORY, and IMAGINED FUTURES, provide your thought process and the single best action to take right now.
 
-**CRITICAL:** Do NOT simply repeat thoughts from previous steps or the example below. Every step is a new situation.
+**CRITICAL DECISION RULES:**
+1. **NEVER choose an action where "Obstacle In Front: true"** - This will result in collision and wasted moves.
+2. **Prioritize actions where "Obstacle In Front: false"** - These are the only valid movement options.
+3. **Evaluate goal position**: Choose actions that orient you toward or move you closer to the green square.
+4. **Do NOT repeat ineffective actions** - Learn from memory that previous similar moves failed.
+5. **Do NOT simply repeat thoughts from previous steps** - Every step is a new situation.
 
 Return your decision in a markdown list format.
-- The "thought" value MUST be your unique one-sentence rationale for THIS step.
+- The "thought" value MUST be your unique one-sentence rationale for THIS step, explaining why you avoided obstacles and chose this action.
 - The "action" value MUST be one of: {action_list}
 
 Example (DO NOT COPY THIS TEXT):
-- **thought**: [The goal is to my right and the path is clear, so I will turn right to face it.]
+- **thought**: [Obstacle ahead if I move forward, but turning right shows clear path with goal to my left, so I will turn right to align toward goal.]
 - **action**: [TURN_RIGHT]
 
 Now, provide ONLY the markdown for your decision.
@@ -98,6 +106,37 @@ def get_outcome_from_reward(reward: float) -> str:
     else:
         return "Inefficient move (no progress)"
 
+
+def choose_safe_action(imagined_futures: Dict[str, Dict[str, str]], fallback_action: str) -> str:
+    """Choose the safest action based on MiniGrid-specific goal-relative semantics."""
+    def _score_goal_alignment(goal_relative_position: str) -> int:
+        normalized = goal_relative_position.strip().lower()
+        ranking = {
+            'here': 0,
+            'front': 1,
+            'front-left': 2,
+            'front-right': 2,
+            'left': 3,
+            'right': 3,
+            'back-left': 4,
+            'back-right': 4,
+            'back': 5,
+        }
+        return ranking.get(normalized, 10)
+
+    safe_actions = [
+        (action, _score_goal_alignment(future.get('goal_relative_position', '')))
+        for action, future in imagined_futures.items()
+        if future.get('obstacle_in_front', '').lower() != 'true' and action != 'STOP'
+    ]
+    if not safe_actions:
+        if imagined_futures.get('STOP', {}).get('obstacle_in_front', '').lower() != 'true':
+            return 'STOP'
+        return fallback_action
+
+    safe_actions.sort(key=lambda item: item[1])
+    return safe_actions[0][0]
+
 def create_memory_summary(memory: Deque[Dict[str, Any]]) -> str:
     """
     Creates a summarized string of the agent's recent memory, including thoughts
@@ -105,18 +144,21 @@ def create_memory_summary(memory: Deque[Dict[str, Any]]) -> str:
     """
     if not memory:
         return "No history yet."
-    
-    summary = "This is a summary of your last few steps:\n"
-    
+
+    summary = "Recent structured transitions:\n"
+
     for entry in memory:
-        # Round the reward for cleaner display
-        reward_str = f"{entry['reward']:.2f}"
-        summary += (
-            f"- Step {entry['step']}: "
-            f"You thought: \"{entry['thought']}\" | "
-            f"You chose: '{entry['action_name']}' | "
-            f"Outcome: {entry['outcome']} (Reward: {reward_str})\n"
-        )
-        
-    summary += "Use this history to inform your next thought."
+        step = entry.get('step', '?')
+        action = entry.get('action_name', entry.get('action', 'N/A'))
+        reward = entry.get('reward', None)
+        dist = entry.get('distance_to_goal', None)
+        pos = entry.get('agent_pos', None)
+
+        reward_str = f"{reward:.2f}" if reward is not None else "N/A"
+        dist_str = str(dist) if dist is not None else "N/A"
+        pos_str = str(pos) if pos is not None else "N/A"
+
+        summary += f"- Step {step}: action={action} | pos={pos_str} | dist_to_goal={dist_str} | reward={reward_str}\n"
+
+    summary += "Use these recent transitions to avoid repeating ineffective actions and to favor trajectories that reduced distance to goal."
     return summary

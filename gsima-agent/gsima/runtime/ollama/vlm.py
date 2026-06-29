@@ -78,7 +78,7 @@ class OllamaVLMRuntime(BaseModelRuntime):
                 "images": [img_base64],
                 "stream": False, # Get the full response at once
                 "options": {
-                    "num_ctx": config.OLLAMA_CONTEXT_SIZE
+                    "num_ctx": config.OLLAMA_PERCEPTION_CONTEXT_SIZE
                 }
             }
 
@@ -91,7 +91,7 @@ class OllamaVLMRuntime(BaseModelRuntime):
             response_data = response.json()
             full_response = response_data.get("response", "").strip()
 
-            logging.debug(f"Ollama VLM raw response: {full_response}")
+            logging.debug(f"VLM raw response: {full_response}")
             return full_response
 
         except requests.exceptions.RequestException as e:

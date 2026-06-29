@@ -57,24 +57,59 @@ class OllamaLLMRuntime(BaseModelRuntime):
             The textual response from the LLM.
         """
         try:
-            # Construct the payload for the Ollama API
+            # First attempt: OpenAI-compatible endpoint.
             payload = {
                 "model": self.model_id,
                 "prompt": prompt,
-                "stream": False, # Get the full response at once
-                "options": {
-                    "num_ctx": config.OLLAMA_CONTEXT_SIZE
-                }
+                "max_tokens": 512,
+                "temperature": 0.0,
             }
 
-            api_url = f"{self.base_url}/api/generate"
-            logging.debug(f"Sending request to Ollama API at {api_url} with model {self.model_id}")
-            
-            response = requests.post(api_url, json=payload, timeout=config.OLLAMA_REQUEST_TIMEOUT)
-            response.raise_for_status() # Raise an exception for bad status codes
+            api_url_v1 = f"{self.base_url}/v1/completions"
+            logging.debug(f"Sending request to Ollama API at {api_url_v1} with model {self.model_id}")
 
+            try:
+                response = requests.post(api_url_v1, json=payload, timeout=config.OLLAMA_REQUEST_TIMEOUT)
+                response.raise_for_status()
+                response_data = response.json()
+                choices = response_data.get("choices", [])
+                if not choices:
+                    raise RuntimeError(f"No choices returned from Ollama LLM response: {response_data}")
+                return choices[0].get("text", "").strip()
+            except requests.exceptions.HTTPError as e:
+                status = getattr(e.response, 'status_code', None)
+                if status == 404:
+                    logging.warning(f"Ollama v1/completions endpoint not found, falling back to /api/generate: {e}")
+                else:
+                    logging.warning(f"Ollama v1/completions request failed, falling back to /api/generate: {e}")
+            except requests.exceptions.RequestException as e:
+                logging.warning(f"Ollama v1/completions request error, falling back to /api/generate: {e}")
+
+            # Fallback: legacy /api/generate endpoint
+            payload_api = {
+                "model": self.model_id,
+                "prompt": prompt,
+                "stream": False,
+                "options": {
+                    "num_ctx": config.OLLAMA_CONTROLLER_CONTEXT_SIZE
+                }
+            }
+            api_url_api = f"{self.base_url}/api/generate"
+            logging.debug(f"Sending fallback request to Ollama API at {api_url_api} with model {self.model_id}")
+            response = requests.post(api_url_api, json=payload_api, timeout=config.OLLAMA_REQUEST_TIMEOUT)
+            if response.status_code == 404:
+                # Try fallback model if available
+                fallback_model = getattr(config, 'OLLAMA_CONTROLLER_FALLBACK_MODEL', None)
+                if fallback_model and fallback_model != self.model_id:
+                    logging.warning(f"Model '{self.model_id}' not found on /api/generate; retrying with fallback model '{fallback_model}'")
+                    payload_api['model'] = fallback_model
+                    response = requests.post(api_url_api, json=payload_api, timeout=config.OLLAMA_REQUEST_TIMEOUT)
+            response.raise_for_status()
             response_data = response.json()
             full_response = response_data.get("response", "").strip()
+            if not full_response:
+                raise RuntimeError(f"Empty response from Ollama /api/generate for model {self.model_id}")
+            return full_response
 
             logging.debug(f"Ollama LLM raw response: {full_response}")
             return full_response

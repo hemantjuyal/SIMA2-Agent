@@ -2,11 +2,10 @@ import logging
 import re
 from typing import Any, Dict
 
-import gymnasium as gym
-
 from gsima.utils import config
 from .base import BaseAgent
 from .context import AgentContext
+from gsima.agents.rollout import RolloutPlanner
 
 
 def _parse_markdown_kv(markdown_text: str) -> Dict[str, str]:
@@ -16,20 +15,23 @@ def _parse_markdown_kv(markdown_text: str) -> Dict[str, str]:
     It handles optional bolding of keys and optional brackets around values.
     """
     data = {}
-    # Regex to find key-value pairs, more forgiving.
-    pattern = re.compile(r"-\s*\**(.+?)\**\s*:\s*\[?(.+?)\]?\s*?$")
-    
     for line in markdown_text.split('\n'):
-        match = pattern.match(line.strip())
-        if match:
-            key = match.group(1).strip()
-            value = match.group(2).strip()
-            
-            # Create a more pythonic key
-            pythonic_key = key.lower().replace(' ', '_')
-            data[pythonic_key] = value
-            
+        cleaned = line.strip()
+        if not cleaned or ':' not in cleaned:
+            continue
+
+        cleaned = re.sub(r'^[*+-]\s*', '', cleaned)
+        key, value = cleaned.split(':', 1)
+        key = key.strip().strip('*').strip()
+        value = value.strip().strip('[]').strip()
+        if not key or not value:
+            continue
+
+        pythonic_key = re.sub(r'\s+', '_', key.lower())
+        data[pythonic_key] = value
+
     return data
+
 
 def get_decision_from_prompt(prompt: str, llm_runtime: Any) -> Dict[str, str]:
     """
@@ -93,6 +95,10 @@ class WorldModelAgent(BaseAgent):
                 vlm_raw_response = context.perception_runtime.get_model_response(visual_prompt, rgb_array_observation)
                 logging.info(f"VLM raw response: '{vlm_raw_response}'")
                 structured_perception = _parse_markdown_kv(vlm_raw_response)
+                structured_perception = context.adapter.normalize_perception(
+                    structured_perception,
+                    vlm_raw_response,
+                )
                 logging.info(f"VLM perception (parsed): {structured_perception}")
             except RuntimeError as e:
                 logging.warning(f"Perception VLM failed: {e}. Proceeding without visual data for this step.")
@@ -100,74 +106,222 @@ class WorldModelAgent(BaseAgent):
 
             # 2. IMAGINE & PLAN (using Simulator LLM and Controller LLM)
             memory_summary = context.memory_system.retrieve()
-            
-            # --- Imagine Phase (using Deterministic Simulator) ---
-            logging.info("Imagining future states with deterministic simulator...")
-            imagined_futures = {}
-            possible_actions = context.adapter.get_canonical_actions()
-            
-            for action in possible_actions:
+
+            # --- PERCEPTION Filtering: only keep semantic labels from VLM ---
+            # Remove any keys that look like precise state (agent/goal/pos/orientation)
+            if structured_perception:
+                semantic_perception = {
+                    k: v for k, v in structured_perception.items()
+                    if not any(substr in k for substr in ['agent', 'goal', 'pos', 'orientation'])
+                }
+            else:
+                semantic_perception = {}
+
+            best_action_name = None
+            ranked = []
+            allowed_actions = {action.name for action in context.adapter.get_canonical_actions()}
+
+            # Let the adapter inject any environment-specific action overrides.
+            suggested_action = context.adapter.suggest_action(semantic_perception)
+            if suggested_action is not None:
+                if suggested_action in allowed_actions:
+                    logging.info(
+                        "Adapter suggested action '%s' based on environment-specific perception heuristics.",
+                        suggested_action,
+                    )
+                    best_action_name = suggested_action
+                else:
+                    logging.warning(
+                        "Adapter suggested unsupported action '%s'; ignoring suggestion.",
+                        suggested_action,
+                    )
+
+            if not context.adapter.supports_simulation() and best_action_name is None:
+                logging.info(
+                    "Adapter does not support deterministic simulation; asking the controller to choose a direct action."
+                )
                 try:
-                    simulated_next_state = context.adapter.simulate_next_state(action.name)
-                    imagined_futures[action.name] = simulated_next_state
-                    logging.debug(f"Simulated next state for '{action.name}': {simulated_next_state}")
+                    controller_prompt = context.get_controller_prompt(
+                        config.INSTRUCTION,
+                        semantic_perception,
+                        memory_summary,
+                        {},
+                    )
+                    controller_decision = get_decision_from_prompt(
+                        controller_prompt,
+                        context.controller_runtime,
+                    )
+                    candidate_action = controller_decision.get('action', '').strip()
+                    if candidate_action in allowed_actions:
+                        best_action_name = candidate_action
+                        logging.info(
+                            "Controller selected action '%s' because simulation is unavailable.",
+                            best_action_name,
+                        )
                 except Exception as e:
-                    logging.error(f"Deterministic simulator failed for action '{action.name}': {e}")
-                    # If simulator fails, that action's future is not imagined
-            
-            # --- Plan Phase ---
-            controller_prompt = context.get_controller_prompt(config.INSTRUCTION, structured_perception, memory_summary, imagined_futures)
-            logging.info(f"Controller LLM prompt:\n{controller_prompt}")
-            
-            try:
-                # Use controller_runtime for action decision
-                decision_dict = get_decision_from_prompt(controller_prompt, context.controller_runtime)
-                thought = decision_dict.get("thought", "N/A")
-                action_name = decision_dict.get("action")
+                    logging.warning(
+                        "Controller direct action selection failed: %s. Falling back to adapter suggestion.",
+                        e,
+                    )
+                if best_action_name is None:
+                    fallback_action = context.adapter.suggest_action(semantic_perception)
+                    if fallback_action in allowed_actions:
+                        best_action_name = fallback_action
+                        logging.info(
+                            "Adapter fallback selected action '%s' because simulation is unavailable.",
+                            best_action_name,
+                        )
 
-                logging.info(f"Agent thought: \"{thought}\"")
-                logging.info(f"Agent decided action: {action_name}")
+            if best_action_name is None and context.adapter.supports_simulation():
+                # --- Imagine & Plan using deterministic simulator + rollout planner ---
+                logging.info(
+                    "Performing multi-step rollouts with deterministic simulator..."
+                )
+                # Create a planner configured from global config
+                planner = RolloutPlanner(
+                    adapter=context.adapter,
+                    depth=config.ROLLOUT_DEPTH,
+                    turn_penalty=config.TURN_PENALTY,
+                    collision_penalty=config.COLLISION_PENALTY,
+                    goal_bonus=config.GOAL_BONUS,
+                )
 
-                if not action_name:
-                    raise KeyError("LLM response is missing the 'action' key.")
+                try:
+                    best_action_name, ranked = planner.plan()
+                except Exception as e:
+                    logging.error(
+                        f"Rollout planner failed: {e}. Falling back to direct controller selection."
+                    )
+                    try:
+                        allowed_actions = {action.name for action in context.adapter.get_canonical_actions()}
+                        controller_prompt = context.get_controller_prompt(
+                            config.INSTRUCTION,
+                            semantic_perception,
+                            memory_summary,
+                            {},
+                        )
+                        controller_decision = get_decision_from_prompt(
+                            controller_prompt,
+                            context.controller_runtime,
+                        )
+                        candidate_action = controller_decision.get('action', '').strip()
+                        if candidate_action in allowed_actions:
+                            best_action_name = candidate_action
+                            logging.info(
+                                "Controller selected action '%s' after planner failure.",
+                                best_action_name,
+                            )
+                    except Exception as e2:
+                        logging.warning(
+                            "Controller fallback after planner failure also failed: %s", e2
+                        )
 
-                env_action = context.adapter.translate_action(action_name)
-                if env_action == -1: # STOP sentinel
-                    logging.info("STOP action received. Ending episode.")
-                    break
-            except (RuntimeError, KeyError) as e:
-                logging.error(f"Error during agent decision phase: {e}. Ending episode.")
+            if best_action_name is None:
+                fallback_action = context.adapter.get_fallback_action(semantic_perception)
+                if fallback_action in allowed_actions:
+                    best_action_name = fallback_action
+                    logging.info(
+                        "No planner/controller action available; using adapter fallback action '%s'.",
+                        best_action_name,
+                    )
+                else:
+                    best_action_name = next(iter(allowed_actions))
+                    logging.info(
+                        "No planner/controller action available; using default supported action '%s'.",
+                        best_action_name,
+                    )
+
+            # Enforce STOP exposure rules using adapter capability metadata.
+            progress = context.adapter.get_progress()
+            dist_to_goal = progress.get('distance_to_goal') if isinstance(progress, dict) else None
+            if dist_to_goal is None and context.adapter.supports_goal_distance():
+                try:
+                    current_state = context.adapter.get_current_env_state()
+                    current_pos = current_state.get('agent_pos')
+                    if current_pos is not None:
+                        dist_to_goal = context.adapter.get_distance_to_goal(current_pos)
+                except Exception:
+                    dist_to_goal = None
+
+            if (
+                best_action_name == 'STOP'
+                and context.adapter.supports_stop()
+                and dist_to_goal is not None
+                and dist_to_goal > config.STOP_DISTANCE_THRESHOLD
+            ):
+                logging.info("Best action was STOP but goal not in threshold; ignoring STOP and choosing alternative.")
+                # pick next best non-STOP action
+                for seq, traj, score in ranked:
+                    first = seq[0] if seq else None
+                    if first and first != 'STOP':
+                        best_action_name = first
+                        break
+
+            # Ask controller LLM only for an explanation/thought about chosen action (not for action selection)
+            thought = "N/A"
+            if context.adapter.should_explain_action(best_action_name, semantic_perception):
+                try:
+                    explanation_prompt = context.get_controller_prompt(config.INSTRUCTION, semantic_perception, memory_summary, {})
+                    # Append a short instruction to explain the chosen action
+                    explanation_prompt += f"\n\nGiven that the planner selected: {best_action_name}, provide a one-sentence rationale for this choice. Return only a single markdown list item '- **thought**: [your one-sentence thought]'."
+                    raw_explanation = context.controller_runtime.get_model_response(explanation_prompt)
+                    parsed = _parse_markdown_kv(raw_explanation)
+                    thought = parsed.get('thought', raw_explanation.strip())
+                except Exception as e:
+                    logging.warning(f"Controller explanation failed: {e}. Continuing without LLM thought.")
+            else:
+                thought = "Adapter-selected reflex action."
+
+            action_name = best_action_name
+            logging.info(f"Planner selected action: {action_name} (thought: {thought})")
+
+            env_action = context.adapter.translate_action(action_name)
+            if env_action == -1:  # STOP sentinel
+                logging.info("STOP action received. Ending episode.")
                 break
 
             # 3. INTERACT with the environment
             try:
                 obs_tuple = context.env.step(env_action)
                 observation, reward, terminated, truncated, info = obs_tuple
+                
+                # Validate that the environment step was executed
+                logging.debug(f"Environment step executed. Reward: {reward}, Terminated: {terminated}, Truncated: {truncated}")
             except Exception as e:
                 logging.error(f"Error executing environment step with action '{action_name}': {e}")
                 break
             
             outcome = context.get_outcome_from_reward(reward)
 
-            # 4. LEARN from the experience
-            experience = {
+            # 4. LEARN from the experience as a structured transition
+            structured_entry = {
                 "step": step_count + 1,
-                "thought": thought,
                 "action_name": action_name,
-                "reward": reward,
-                "outcome": outcome,
-                "perception_raw": vlm_raw_response, # Store the raw perception for debugging
+                "reward": float(reward),
             }
-            context.memory_system.add(experience)
+            for state_getter in (context.adapter.get_state_summary, context.adapter.get_progress):
+                try:
+                    state_data = state_getter()
+                except Exception:
+                    state_data = {}
+                if isinstance(state_data, dict):
+                    structured_entry.update(state_data)
+
+            # Keep raw perception for debugging but do not use it as authoritative state
+            structured_entry["perception_raw"] = vlm_raw_response
+            structured_entry["thought"] = thought
+            context.memory_system.add(structured_entry)
 
             initial_obs = observation
             
             # VLM perception is always used by the world model agent
+            # Get fresh observation AFTER the step has been executed
             if not (terminated or truncated):
                 if config.RENDER_MODE == "human" or config.RENDER_MODE == "record":
                     rgb_array_observation = context.env.unwrapped.render()
                 else:
                     rgb_array_observation = context.env.render()
+                logging.debug(f"Updated observation after step {step_count + 1}")
 
             logging.info(f"Executed action: {action_name}, Reward: {reward:.2f}, Outcome: {outcome}")
             step_count += 1

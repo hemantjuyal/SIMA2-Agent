@@ -8,10 +8,9 @@ from enum import Enum
 
 class CanonicalAction(Enum):
     # Basic navigation
-    MOVE_FORWARD = "MOVE_FORWARD"
-    TURN_LEFT = "TURN_LEFT"
-    TURN_RIGHT = "TURN_RIGHT"
-    STOP = "STOP"
+    MOVE_LEFT = "MOVE_LEFT"
+    MOVE_RIGHT = "MOVE_RIGHT"
+    SHOOT = "SHOOT"
 
     # Future potential actions for more complex environments
     # JUMP = "JUMP"

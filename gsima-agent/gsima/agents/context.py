@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 import gymnasium as gym
-from typing import Callable
+from typing import Callable, Dict, Optional
 
 from gsima.environments.base import BaseAdapter
 from gsima.runtime.base import BaseModelRuntime
@@ -23,3 +23,4 @@ class AgentContext:
     get_visual_prompt: Callable
     get_controller_prompt: Callable
     get_outcome_from_reward: Callable
+    choose_safe_action: Optional[Callable[[Dict[str, Dict[str, str]], str], str]] = None

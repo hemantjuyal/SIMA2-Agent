@@ -6,6 +6,7 @@ import numpy as np
 from minigrid.core.constants import DIR_TO_VEC
 
 from gsima.environments.base import BaseAdapter
+from gsima.environments.minigrid.custom_reward_wrapper import CustomMiniGridRewardWrapper
 from gsima.environments.minigrid.schema import SUPPORTED_ACTIONS
 from gsima.schema import CanonicalAction
 
@@ -18,6 +19,8 @@ class MiniGridAdapter(BaseAdapter):
             action.name: self._get_env_action(action) for action in SUPPORTED_ACTIONS
         }
         logging.debug(f"MiniGridAdapter initialized with action map: {self.action_map}")
+        # Store the last known environment state for validation
+        self.last_known_state = None
 
     def _get_env_action(self, action: CanonicalAction):
         """Maps a canonical action to a specific MiniGrid environment action."""
@@ -47,16 +50,106 @@ class MiniGridAdapter(BaseAdapter):
         """Returns a list of canonical actions supported by the MiniGrid environment."""
         return SUPPORTED_ACTIONS
 
+    def get_env_metadata(self) -> Dict[str, Any]:
+        """Describe MiniGrid-specific capabilities for the agent."""
+        return {
+            "env_type": "minigrid",
+            "supports_distance": True,
+            "supports_stop": True,
+            "state_keys": ["agent_pos", "agent_dir"],
+        }
+
+    def get_action_metadata(self) -> Dict[str, Any]:
+        """Expose action semantics that are safe for generic planning."""
+        return {
+            action.name: {
+                "canonical": action.name,
+                "supports_stop": action.name == "STOP",
+            }
+            for action in SUPPORTED_ACTIONS
+        }
+
+    def get_state_summary(self) -> Dict[str, Any]:
+        """Return a compact, generic summary of the current MiniGrid state."""
+        current_state = self.get_current_env_state()
+        agent_pos = current_state.get("agent_pos")
+        distance = self.get_distance_to_goal(agent_pos) if agent_pos is not None else None
+        return {
+            "agent_pos": current_state.get("agent_pos"),
+            "agent_dir": current_state.get("agent_dir"),
+            "distance_to_goal": distance,
+            "goal_pos": self.get_goal_pos(),
+        }
+
+    def get_current_env_state(self) -> Dict[str, Any]:
+        """Gets the current ground truth state from the environment."""
+        true_env = self.env.unwrapped
+        return {
+            "agent_pos": np.array(true_env.agent_pos),
+            "agent_dir": copy.deepcopy(true_env.agent_dir),
+        }
+
+    def get_progress(self) -> Dict[str, Any]:
+        """Return a normalized progress view for the planner/agent."""
+        state = self.get_current_env_state()
+        agent_pos = state.get("agent_pos")
+        if agent_pos is None:
+            return {}
+        try:
+            distance = self.get_distance_to_goal(agent_pos)
+            return {
+                "distance_to_goal": distance,
+                "goal_reached": distance == 0,
+            }
+        except Exception:
+            return {}
+
+    def supports_simulation(self) -> bool:
+        """MiniGrid supports deterministic trajectory simulation."""
+        return True
+
+    def supports_goal_distance(self) -> bool:
+        """MiniGrid exposes a meaningful goal-distance metric."""
+        return True
+
+    def supports_stop(self) -> bool:
+        """MiniGrid supports STOP as a meaningful terminal action."""
+        return True
+
+    def validate_state_consistency(self):
+        """
+        Validates that the environment state is consistent.
+        Logs warnings if there are discrepancies.
+        """
+        true_env = self.env.unwrapped
+        current_pos = np.array(true_env.agent_pos)
+        current_dir = true_env.agent_dir
+        
+        if self.last_known_state is not None:
+            last_pos = self.last_known_state.get("agent_pos")
+            last_dir = self.last_known_state.get("agent_dir")
+            
+            if last_pos is not None and not np.array_equal(last_pos, current_pos):
+                logging.debug(f"State consistency check: Position changed from {last_pos} to {current_pos}")
+            if last_dir is not None and last_dir != current_dir:
+                logging.debug(f"State consistency check: Direction changed from {last_dir} to {current_dir}")
+        
+        self.last_known_state = {"agent_pos": current_pos, "agent_dir": current_dir}
+
     def simulate_next_state(self, action_name: str) -> Dict[str, Any]:
         """
         Simulates the next state for a given action using the ground truth from the environment.
         This provides a perfect, deterministic prediction.
+        Uses a copy of the environment state to avoid any side effects.
         """
         logging.debug(f"--- SIMULATOR: Starting simulation for action '{action_name}' ---")
         true_env = self.env.unwrapped
         
-        # Initial State Logging
-        agent_pos = np.array(true_env.agent_pos)
+        # Validate current state consistency
+        self.validate_state_consistency()
+        
+        # Get a copy of the current state - DO NOT modify the actual environment
+        agent_pos = np.array(true_env.agent_pos, copy=True)
         agent_dir = copy.deepcopy(true_env.agent_dir)
         logging.debug(f"SIMULATOR: Initial state -> pos: {agent_pos} (type: {type(agent_pos)}), dir: {agent_dir} (type: {type(agent_dir)})")
 
@@ -73,7 +166,7 @@ class MiniGridAdapter(BaseAdapter):
 
         goal_pos = np.array(goal_pos)
 
-        # Simulate action effect
+        # Simulate action effect on the COPY of the state
         if action_name == "TURN_LEFT":
             agent_dir = (agent_dir - 1) % 4
         elif action_name == "TURN_RIGHT":
@@ -83,6 +176,8 @@ class MiniGridAdapter(BaseAdapter):
             fwd_cell = grid.get(*fwd_pos)
             if fwd_cell is None or fwd_cell.can_overlap():
                 agent_pos = fwd_pos
+            else:
+                logging.debug(f"SIMULATOR: MOVE_FORWARD blocked by obstacle at {fwd_pos}")
         
         logging.debug(f"SIMULATOR: State after action -> pos: {agent_pos}, dir: {agent_dir}")
 
@@ -117,8 +212,101 @@ class MiniGridAdapter(BaseAdapter):
         result = {
             "agent_orientation": predicted_orientation,
             "goal_relative_position": goal_rel_pos,
-            "obstacle_in_front": predicted_obstacle
+            "obstacle_in_front": predicted_obstacle,
         }
         logging.debug(f"--- SIMULATOR: Finished simulation. Result: {result} ---")
         return result
+
+    def get_goal_pos(self):
+        """Return the position of the goal object in the grid as a numpy array."""
+        true_env = self.env.unwrapped
+        grid = true_env.grid
+        for obj in grid.grid:
+            if obj and obj.type == 'goal':
+                return obj.cur_pos
+        return None
+
+    def get_distance_to_goal(self, agent_pos=None):
+        """Compute Manhattan distance from agent_pos (or current env agent_pos) to the goal."""
+        import numpy as np
+        true_env = self.env.unwrapped
+        if agent_pos is None:
+            agent_pos = np.array(true_env.agent_pos)
+        else:
+            agent_pos = np.array(agent_pos)
+
+        goal_pos = self.get_goal_pos()
+        if goal_pos is None:
+            raise RuntimeError("Could not find goal in MiniGrid environment.")
+        goal_pos = np.array(goal_pos)
+        return int(abs(goal_pos[0] - agent_pos[0]) + abs(goal_pos[1] - agent_pos[1]))
+
+    def simulate_trajectory(self, start_pos, start_dir, actions: list) -> list:
+        """Simulate a sequence of actions from a provided start state.
+
+        Returns a list of predicted state dictionaries for each step in the trajectory.
+        """
+        import numpy as np
+        true_env = self.env.unwrapped
+        grid = true_env.grid
+
+        agent_pos = np.array(start_pos, copy=True)
+        agent_dir = int(start_dir)
+
+        orientation_map = {0: 'EAST', 1: 'SOUTH', 2: 'WEST', 3: 'NORTH'}
+        results = []
+
+        for action_name in actions:
+            if action_name == "TURN_LEFT":
+                agent_dir = (agent_dir - 1) % 4
+            elif action_name == "TURN_RIGHT":
+                agent_dir = (agent_dir + 1) % 4
+            elif action_name == "MOVE_FORWARD":
+                fwd_pos = agent_pos + DIR_TO_VEC[agent_dir]
+                fwd_cell = grid.get(*fwd_pos)
+                if fwd_cell is None or fwd_cell.can_overlap():
+                    agent_pos = fwd_pos
+
+            predicted_orientation = orientation_map[agent_dir]
+
+            dir_vec = DIR_TO_VEC[agent_dir]
+            fwd_pos_after_move = agent_pos + dir_vec
+            fwd_cell = grid.get(*fwd_pos_after_move)
+            predicted_obstacle = 'true' if fwd_cell is not None and not fwd_cell.can_overlap() else 'false'
+
+            # compute goal relative pos
+            goal_pos = self.get_goal_pos()
+            if goal_pos is None:
+                goal_rel_pos = 'unknown'
+            else:
+                goal_pos = np.array(goal_pos)
+                if np.array_equal(agent_pos, goal_pos):
+                    goal_rel_pos = 'here'
+                else:
+                    vec_to_goal = goal_pos - agent_pos
+                    right_vec = np.array([dir_vec[1], -dir_vec[0]])
+                    dot_forward = np.dot(vec_to_goal, dir_vec)
+                    dot_right = np.dot(vec_to_goal, right_vec)
+                    if abs(dot_forward) > abs(dot_right):
+                        goal_rel_pos = 'front' if dot_forward > 0 else 'back'
+                    else:
+                        goal_rel_pos = 'right' if dot_right > 0 else 'left'
+
+            distance = int(abs(goal_pos[0] - agent_pos[0]) + abs(goal_pos[1] - agent_pos[1])) if goal_pos is not None else -1
+
+            results.append({
+                "agent_orientation": predicted_orientation,
+                "goal_relative_position": goal_rel_pos,
+                "obstacle_in_front": predicted_obstacle,
+                "distance_to_goal": distance,
+            })
+
+        return results
+
+
+def apply_env_wrappers(env):
+    """Apply MiniGrid-specific wrappers for the environment."""
+    logging.info("Applying CustomMiniGridRewardWrapper for shaping rewards.")
+    return CustomMiniGridRewardWrapper(env)
+
 

@@ -1,15 +1,49 @@
+import inspect
 import os
 import importlib
 import logging
 import datetime
+import re
 import gymnasium as gym
 from gymnasium.wrappers import RecordVideo, HumanRendering
 
 from gsima.utils import config
 from gsima.environments.base import BaseAdapter
 from gsima.memory import create_memory
-import minigrid  # Explicitly import minigrid to register its environments
-from gsima.environments.minigrid.custom_reward_wrapper import CustomMiniGridRewardWrapper
+
+
+def _infer_env_type(env_name: str) -> str:
+    """Infer the environment backend from a Gym environment name.
+
+    Handles names that use a scenario suffix after the backend prefix, such as
+    ``VizdoomBasic-v1`` and ``VizdoomBasic-MultiBinary-v1``.
+    """
+    normalized = env_name.strip().lower()
+
+    # Explicit backend prefixes take priority.
+    if normalized.startswith("minigrid"):
+        return "minigrid"
+    if normalized.startswith("vizdoom") or normalized.startswith("doom"):
+        return "vizdoom"
+
+    # Fallback to the first hyphen-separated token for naming conventions.
+    prefix = env_name.split("-")[0].lower()
+    if prefix.startswith("vizdoom") or prefix.startswith("doom"):
+        return "vizdoom"
+    if prefix.startswith("minigrid"):
+        return "minigrid"
+    return prefix
+
+
+def _to_adapter_class_name(env_type: str) -> str:
+    """Convert a backend slug into a stable adapter class name.
+
+    This keeps the factory resilient for future environments that use
+    underscores, hyphens, or mixed-case backend identifiers.
+    """
+    parts = re.split(r"[^a-zA-Z0-9]+", env_type)
+    return "".join(part.capitalize() for part in parts if part) + "Adapter"
+
 
 def create_env_and_adapter() -> tuple:
     """
@@ -34,26 +68,50 @@ def create_env_and_adapter() -> tuple:
     logging.info(f"Attempting to create environment: {env_name}")
 
     # --- Dynamic Environment Type Detection ---
-    try:
-        env_type = env_name.split('-')[0].lower()
-        if env_type == "minigrid":
-            adapter_class_name = "MiniGridAdapter"
-        else:
-            adapter_class_name = f"{env_type.capitalize()}Adapter"
-        logging.info(f"Detected environment type: '{env_type}'")
-    except IndexError:
-        raise ValueError(f"Invalid environment name format: {env_name}")
+    env_type = config.ENV_TYPE.strip().lower() if config.ENV_TYPE else ""
+    if not env_type:
+        try:
+            env_type = _infer_env_type(env_name)
+        except (AttributeError, IndexError):
+            raise ValueError(f"Invalid environment name format: {env_name}")
+
+    if not env_type:
+        raise ValueError("Environment type could not be determined from ENV_TYPE or GYM_ENVIRONMENT.")
+
+    adapter_class_name = _to_adapter_class_name(env_type)
+    logging.info(f"Detected environment type: '{env_type}'")
 
     # --- Dynamic Module and Component Loading ---
     try:
+        env_package = importlib.import_module(f"gsima.environments.{env_type}")
+        if hasattr(env_package, "ensure_registration"):
+            env_package.ensure_registration()
+
         adapter_module = importlib.import_module(f"gsima.environments.{env_type}.adapter")
-        adapter_class = getattr(adapter_module, adapter_class_name)
+        adapter_class = getattr(adapter_module, adapter_class_name, None)
+        if adapter_class is None:
+            adapter_candidates = [
+                getattr(adapter_module, name)
+                for name, obj in inspect.getmembers(adapter_module, inspect.isclass)
+                if issubclass(obj, BaseAdapter) and obj is not BaseAdapter
+            ]
+            if adapter_candidates:
+                adapter_class = adapter_candidates[0]
+                logging.warning(
+                    f"Could not find adapter class '{adapter_class_name}'. "
+                    f"Falling back to concrete adapter '{adapter_class.__name__}'."
+                )
+            else:
+                raise AttributeError(
+                    f"Adapter class '{adapter_class_name}' not found in module {adapter_module.__name__}."
+                )
 
         prompt_module = importlib.import_module(f"gsima.environments.{env_type}.prompt")
         get_visual_prompt_func = getattr(prompt_module, "get_visual_prompt")
         get_controller_prompt_func = getattr(prompt_module, "get_controller_prompt")
         get_outcome_from_reward_func = getattr(prompt_module, "get_outcome_from_reward")
         create_memory_summary_func = getattr(prompt_module, "create_memory_summary")
+        choose_safe_action_func = getattr(prompt_module, "choose_safe_action", None)
 
     except (ImportError, AttributeError) as e:
         raise ImportError(f"Could not find or load components for env type '{env_type}': {e}")
@@ -76,9 +134,8 @@ def create_env_and_adapter() -> tuple:
     adapter = adapter_class(env)
 
     # --- Environment-Specific Wrappers ---
-    if env_type == "minigrid":
-        logging.info("Applying CustomMiniGridRewardWrapper for shaping rewards.")
-        env = CustomMiniGridRewardWrapper(env)
+    if hasattr(adapter_module, "apply_env_wrappers"):
+        env = adapter_module.apply_env_wrappers(env)
 
     # --- User-Facing Rendering Wrappers ---
     if config.RENDER_MODE == "human":
@@ -101,5 +158,6 @@ def create_env_and_adapter() -> tuple:
         get_visual_prompt_func,
         get_controller_prompt_func,
         get_outcome_from_reward_func,
+        choose_safe_action_func,
     )
 

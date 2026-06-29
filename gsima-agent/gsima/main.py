@@ -15,12 +15,15 @@ def log_configuration():
 
     if config.RUNTIME == "ollama":
         logging.info(f"OLLAMA_PERCEPTION_MODEL: {config.OLLAMA_PERCEPTION_MODEL}")
+        logging.info(f"OLLAMA_PERCEPTION_CONTEXT_SIZE: {config.OLLAMA_PERCEPTION_CONTEXT_SIZE}")
         logging.info(f"OLLAMA_CONTROLLER_MODEL: {config.OLLAMA_CONTROLLER_MODEL}")
+        logging.info(f"OLLAMA_CONTROLLER_CONTEXT_SIZE: {config.OLLAMA_CONTROLLER_CONTEXT_SIZE}")
     else: # Default to mlx
         logging.info(f"PERCEPTION_MODEL_ID: {config.PERCEPTION_MODEL_ID}")
         logging.info(f"CONTROLLER_MODEL_ID: {config.CONTROLLER_MODEL_ID}")
     
     logging.info(f"GYM_ENVIRONMENT: {config.GYM_ENVIRONMENT}")
+    logging.info(f"ENV_TYPE: {config.ENV_TYPE}")
     logging.info(f"RENDER_MODE: {config.RENDER_MODE}")
     logging.info(f"MAX_STEPS: {config.MAX_STEPS}")
     logging.info(f"INSTRUCTION: {config.INSTRUCTION}")
@@ -56,7 +59,12 @@ def main():
             get_visual_prompt,
             get_controller_prompt,
             get_outcome_from_reward,
+            choose_safe_action,
         ) = environments.create_env_and_adapter()
+
+        # Log adapter capability metadata so the runtime behavior is explicit
+        logging.info(f"Adapter metadata: {adapter.get_env_metadata()}")
+        logging.info(f"Action metadata: {adapter.get_action_metadata()}")
 
         # 2. Assemble the context object
         context = AgentContext(
@@ -68,6 +76,7 @@ def main():
             get_visual_prompt=get_visual_prompt,
             get_controller_prompt=get_controller_prompt,
             get_outcome_from_reward=get_outcome_from_reward,
+            choose_safe_action=choose_safe_action,
         )
 
         # 3. Create the agent and run it with the context
