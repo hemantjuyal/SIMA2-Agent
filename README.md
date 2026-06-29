@@ -174,7 +174,7 @@ Update `main.env` so that:
 Recommended Ollama setup:
 
 - **Perception:** `llava:latest`
-- **Controller:** `qwen2.5:3b` or `qwen3:0.6b`
+- **Controller:** `qwen2.5:3b` or `qwen3-1.7B-4bit`
 
 ### 3. Run the agent
 
@@ -194,13 +194,3 @@ The test suite verifies the factory behavior, adapter contract, and agent logic 
 ```bash
 pytest gsima-agent/tests/
 ```
-
-## Notes on current development status
-
-The project is now moving toward a cleaner separation between:
-
-- generic agent reasoning
-- environment-specific adapters
-- runtime-specific model wrappers
-
-That separation is what makes the framework easier to extend as more Gym environments are added over time.
