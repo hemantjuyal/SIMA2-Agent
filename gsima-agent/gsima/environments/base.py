@@ -38,8 +38,14 @@ class BaseAdapter(ABC):
         return False
 
     def get_progress(self) -> Dict[str, Any]:
-        """Return a normalized progress view the agent can use for planning."""
-        return {}
+        """Returns environment-specific progress metrics (e.g. distance to goal)."""
+        pass
+
+    def get_termination_message(self, success: bool) -> str:
+        """Returns an environment-specific narrative message when the episode terminates."""
+        if success:
+            return "Mission accomplished! The objective has been secured."
+        return "Mission failed or timed out. I was unable to complete the objective."
 
     def normalize_perception(
         self,
@@ -80,6 +86,10 @@ class BaseAdapter(ABC):
         """
         actions = self.get_canonical_actions()
         return actions[0].name if actions else None
+
+    def shape_reward(self, reward: float, action_name: str, previous_perception: Dict[str, Any]) -> float:
+        """Shape the environment reward for better agent guidance."""
+        return reward
 
     def should_explain_action(
         self,

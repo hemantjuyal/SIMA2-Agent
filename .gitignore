@@ -1,2 +1,6 @@
 .venv
-.env
+# .env
+output/**/**
+outputs/**/**
+_vizdoom.ini
+video_work/**/**

@@ -1,196 +1,181 @@
-# SIMA2 Agent
+# GSIMA: Grounded Semantic Instructable Multiworld Agent
 
-SIMA2 Agent is a modular, multi-modal world-model framework for Gymnasium environments. The project is designed around a simple idea: let a VLM interpret the scene, let a controller reason over history and context, and let environment-specific adapters translate that reasoning into valid low-level actions.
+**GSIMA** is an experimental research framework dedicated to building generalist, multi-modal world-model agents. Inspired by Google DeepMind's SIMA architecture, GSIMA explores the frontier of zero-shot embodied AI by completely decoupling the agent from traditional Reinforcement Learning (RL) reward paradigms and internal game-engine state vectors.
 
-The repository now includes support for multiple backend styles, with MiniGrid and ViZDoom examples wired through a common environment factory and adapter contract.
+At its core, GSIMA implements a strict, reward-blind **Perceive-Think-Act** cognitive loop powered by a multimodal foundation model. Our **GSIMA Agent** constructs a localized "world model" to navigate spatial constraints, predict temporal dynamics, and execute strategic actions across fundamentally distinct simulation topologies—from 2D discrete grid-worlds to 3D continuous first-person shooters. 
 
-## Why this project exists
+Crucially, GSIMA forces explicit causal reasoning through **Semantic Anchoring**, ensuring every executed action is mathematically linked to a visually grounded perception and a strategic rationale.
 
-Most pure RL pipelines optimize a single policy end-to-end. SIMA2 Agent instead follows a more explicit loop:
+---
 
-- **Perceive** the current observation
-- **Imagine** possible futures using environment capabilities
-- **Plan** using memory and controller reasoning
-- **Act** by executing a valid action through a backend adapter
+## Core Research Concepts
 
-This keeps the agent logic readable and makes it much easier to swap environments or runtimes.
+While traditional Reinforcement Learning optimizes narrow policies bound to explicit environment variables, the GSIMA agent investigates a generalized, zero-shot approach to embodied intelligence. Our primary research areas include:
 
-## Highlights
+1. **Generalist World Modeling:** The agent synthesizes environmental states entirely from visual and linguistic context. It builds a localized understanding of the world without accessing internal game-engine coordinates or underlying object logic.
+2. **Reward-Blind Autonomous Execution:** GSIMA completely discards numerical reward signals. The cognitive engine is driven entirely by semantic reasoning, leveraging a dynamic memory buffer to maintain episodic context and prevent behavioral looping.
+3. **Unified Multimodal Inference:** The architecture consolidates perception, spatial rationale, and decision-making into a singular vision-language query. This eliminates the need for fragmented sub-networks for vision processing and action selection, standardizing the intelligence pipeline.
 
-- **Perceive → Imagine → Plan → Act** loop for structured decision-making
-- **Environment factory** that infers backend type from Gym ID and loads the correct adapter
-- **Adapter contract** so the world model stays generic across environments
-- **Runtime abstraction** for VLM and LLM backends (including Ollama-based setups)
-- **Memory summarization** to track recent transitions and outcomes
-- **Support for multiple gym backends**, including MiniGrid and ViZDoom
+## Technical Highlights
 
-## Example visual output
+- **Asynchronous Cognitive Engine:** The core `WorldModelAgent` operates in a non-blocking, multi-threaded event loop. It orchestrates perception extraction, LLM querying, and environment stepping while streaming real-time telemetry out via an event emitter.
+- **Agnostic Environment Adapter Pattern:** The architecture abstracts away engine-specific complexities (like Gym wrappers and observation spaces) through a polymorphic adapter interface. This allows the agent to transparently interact with 2D discrete grids (BabyAI/MiniGrid) and 3D continuous engines (ViZDoom) using a unified action schema.
+- **Realtime Observability Dashboard:** A high-performance React (Vite) frontend consumes full-duplex WebSocket streams to render the agent's live cognitive cycle. The dashboard visualizes the active game frame alongside the agent's structured thoughts, semantic narratives, and actions in real-time.
+- **Dynamic Episodic Memory System:** GSIMA utilizes a rolling memory buffer to inject the recent history of action-thought pairs directly into the prompt context window. This temporal awareness prevents the agent from falling into repetitive behavioral loops.
+- **Robust Output Parsers & Fallbacks:** The engine features strict Markdown output parsers equipped with aggressive regex sanitization and intelligent action fallbacks, guaranteeing stable execution even when the VLM outputs non-deterministic or malformed syntax.
+- **Automated Execution Tracing:** The framework automatically captures agent gameplay and features a centralized FFmpeg pipeline (`video_work`) to compress, speed-adjust, and export execution traces into optimized GIFs and MP4s for research documentation.
 
-<table>
-  <tr>
-    <td><img src="https://github.com/hemantjuyal/SIMA2-Agent/blob/SIMA2Agent-WM/gsima-agent/output/recordings/MiniGrid-Empty-8x8-1.gif" width="400" alt="MiniGrid example 1"></td>
-    <td><img src="https://github.com/hemantjuyal/SIMA2-Agent/blob/SIMA2Agent-WM/gsima-agent/output/recordings/MiniGrid-Empty-8x8-3.gif" width="400" alt="MiniGrid example 2"></td>
-    <td><img src="https://github.com/hemantjuyal/SIMA2-Agent/blob/SIMA2Agent-WM/gsima-agent/output/recordings/MiniGrid-Empty-8x8-2.gif" width="400" alt="MiniGrid example 3"></td>
-  </tr>
+## Experimental Environments
+
+GSIMA currently supports and evaluates on three primary testbeds:<table width="100%">
+  <thead>
+    <tr>
+      <th width="15%">Environment Module</th>
+      <th width="55%">SIMA2 Experiment Agent Behavior</th>
+      <th width="30%">Challenge</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><b>MiniGrid (Empty)</b><br/>2D top-down grid world</td>
+      <td><img src="./gsima-agent/agent-run-recordings/minigrid_basic-960-30.0x-fps30.gif" width="100%" alt="SIMA2 Agent Execution in MiniGrid - Reach the Goal"></td>
+      <td><b>Game Complexity:</b> Ego-centric viewport with limited visibility and no access to global coordinate maps.<br/><br/><b>Cognitive Intelligence:</b> Demands robust spatial mapping. The VLM must persistently construct a localized world model to orient itself and track its heading toward unseen objectives.</td>
+    </tr>
+    <tr>
+      <td><b>BabyAI (Unlock & Pickup)</b><br/>2D top-down grid world</td>
+      <td><img src="./gsima-agent/agent-run-recordings/baby_ai_unlock_pick-960-30.0x-fps30.gif" width="100%" alt="SIMA2 Agent Execution in Baby AI - Unlock and Pick"></td>
+      <td><b>Game Complexity:</b> Procedurally generated layouts with interactable objects requiring sequential state changes (e.g., inventory management).<br/><br/><b>Cognitive Intelligence:</b> Requires complex causal logic and compositional reasoning. The agent must visually ground language (e.g., color-matching) and deduce multi-stage dependencies entirely from its world model.</td>
+    </tr>
+    <tr>
+      <td><b>ViZDoom (Basic)</b><br/>3D first-person shooter</td>
+      <td><img src="./gsima-agent/agent-run-recordings/vizdoom_basic-960-30.0x-fps30.gif" width="100%" alt="SIMA2 Agent Execution in DOOM - Move and Kill"></td>
+      <td><b>Game Complexity:</b> Real-time 3D environment with visually noisy, low-resolution textures and required angular precision.<br/><br/><b>Cognitive Intelligence:</b> Tests spatial depth perception. The agent must construct a depth-aware mental model from a flat 2D RGB array and calculate horizontal angular offsets to execute precise hitscan targeting.</td>
+    </tr>
+    <tr>
+      <td><b>ViZDoom (Predict)</b><br/>3D first-person shooter</td>
+      <td><img src="./gsima-agent/agent-run-recordings/vizdoom_predict-2-960-30.0x-fps30.gif" width="100%" alt="SIMA2 Agent Execution in DOOM - Predict and Kill"></td>
+      <td><b>Game Complexity:</b> High-stakes temporal dynamics with moving targets and slow-traveling projectiles that require spatial leading.<br/><br/><b>Cognitive Intelligence:</b> Introduces physics prediction. The cognitive engine must estimate velocity vectors, calculate projectile travel times, and execute proactive suppression fire, overriding static alignment heuristics.</td>
+    </tr>
+  </tbody>
 </table>
 
-## System Components and Flow Diagram
+<br/>
 
-The architecture is centered around the `AgentContext`, a dependency container that assembles all modular components needed for the agent execution.
+---
+
+## System Architecture
+
+The architecture is built on a strict separation of concerns, decoupling the Presentation Layer, the Orchestration API, and the Cognitive Agent Engine.
 
 ```mermaid
 %%{init: {'theme': 'neutral'}}%%
 graph TD
-    subgraph "1. Initialization (main.py)"
-        A[main.py] --> B{Factories}
-        B --> C[Environment Factory]
-        B --> D[Runtime Factory]
-        B --> E[Memory Factory]
+    %% Styling
+    classDef ui fill:#e3f2fd,stroke:#1565c0,stroke-width:2px;
+    classDef api fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px;
+    classDef core fill:#fff3e0,stroke:#e65100,stroke-width:2px;
+    classDef env fill:#f3e5f5,stroke:#6a1b9a,stroke-width:2px;
 
-        C --> C1[Gym Env & Adapter]
-        D --> D1[Perception VLM]
-        D --> D2[Controller LLM]
-        E --> E1[Short-Term Memory]
-
-        A -- assembles --> F[AgentContext]
-        F -- contains --> C1
-        F -- contains --> D1
-        F -- contains --> D2
-        F -- contains --> E1
+    subgraph "Presentation Layer"
+        UI[Live Experiment Dashboard<br/>]:::ui
+        WS_CLIENT[WebSocket Data Consumer]:::ui
+        UI <--> WS_CLIENT
     end
 
-    subgraph "2. Execution (Agent.run)"
-        G[WorldModelAgent] -- uses --> F
-
-        subgraph "Perceive-Imagine-Plan-Act Loop"
-            H[1. PERCEIVE] -- VLM Prompt + Image --> D1
-            D1 -- Markdown Perception --> H
-
-            H --> I[2. IMAGINE]
-            I -- Planner Inputs --> C1
-            C1 -- Optional Simulated Futures --> I
-
-            I --> J[3. PLAN & ACT]
-            J -- Context + History + Planner Result --> D2
-            D2 -- Thought / Rationale --> J
-
-            J -- Env Action --> C1
-            C1 -- Gym step --> K[4. LEARN]
-            K -- Reward & Outcome --> E1
-            E1 -- Memory Summary --> H
-        end
+    subgraph "Orchestration & Control"
+        API[Asynchronous Event Server<br/>FastAPI]:::api
+        WS_CLIENT <-->|Full-Duplex Telemetry| API
     end
+
+    subgraph "Cognitive Architecture (World Model)"
+        AC[Simulation Interface Binder]:::core
+        PTA[World Model Orchestrator]:::core
+        PROMPT[Semantic Anchoring &<br/>Contextual Grounding]:::core
+        MEM[Episodic Memory Buffer]:::core
+        VLM[Vision-Language Foundation Model]:::core
+        PARSER[Output Parser &<br/>Action Fallbacks]:::core
+        
+        API -->|Initializes| AC
+        AC --> PTA
+        PTA -- "1. Extract Spatiotemporal Context" --> MEM
+        PTA -- "2. Inject Mission Axioms" --> PROMPT
+        MEM -- "Episodic Action Trajectory" --> PROMPT
+        PROMPT -- "3. Grounded Inference Query" --> VLM
+        VLM -- "4. Raw Thought & Action" --> PARSER
+        PARSER -- "5. Validated Action" --> PTA
+    end
+
+    subgraph "Simulation Layer"
+        EF[Environment Factory]:::env
+        ENV[Env Sandbox & Action Adapter]:::env
+        
+        AC --> EF
+        EF --> ENV
+        PTA -- "6. Execute Mapped Action" --> ENV
+        ENV -- "Visual Frame & Environment State" --> PTA
+    end
+
+    %% Event Stream back to API
+    PTA -. "Realtime State Broadcast" .-> API
 ```
 
-### How the flow works
+### Cognitive Data Flow
 
-1. **Initialization**: `main.py` builds the environment, runtime, and memory factories and packages them into `AgentContext`.
-2. **Perception**: the VLM reads the current observation and converts it into semantic facts.
-3. **Imagine**: the planner uses adapter capabilities to reason about possible future outcomes; if the environment supports simulation, those futures can be evaluated directly.
-4. **Plan and Act**: the adapter may first provide an optional action override for domain-specific cases, otherwise the planner chooses the next action from the adapter-supported action set, and the controller runtime later provides a rationale/explanation for that choice.
-5. **Learn**: the environment step result is stored in memory so the next iteration can benefit from recent experience.
+1. **Orchestration**: The user initializes a simulation trial via the Live Dashboard. The API constructs the Simulation Interface Binder, dynamically injecting the selected Environment Adapter, Episodic Memory Buffer, and VLM Runtime based on the configuration.
+2. **Perception & Grounding**: The simulation yields a raw visual frame. The Cognitive Engine retrieves the agent's recent episodic trajectory from the memory buffer and injects environment-specific rules (axioms) via the Prompt Injector to provide critical contextual grounding.
+3. **Reasoning (Semantic Anchoring)**: The multimodal query is dispatched to the Vision-Language Model. By enforcing rigorous semantic grounding, the agent constructs a localized world model to analyze the visual state, deduce strategic rationale, and synthesize a confident narrative alongside its final semantic intent.
+4. **Validation & Fallback**: The Output Parser aggressively sanitizes the VLM's generated response, stripping hallucinations or invalid formatting. If an invalid action is predicted, the system safely defaults to a fallback heuristic (e.g., `STOP`) to ensure continuous, crash-free execution.
+5. **Execution**: The Environment Adapter translates the validated canonical action (e.g., `TURN_LEFT`) into the underlying engine's discrete integer map. The action is executed in the Sandbox, and the resulting visual frame and telemetry are streamed back over WebSockets for real-time UI rendering.
 
-### Why this structure matters
+---
 
-This layout keeps the responsibilities clear:
+## Getting Started
 
-- the **agent** controls the loop
-- the **adapter** handles environment-specific translation and simulation rules
-- the **runtime** handles perception and controller model calls
-- the **memory** stores recent transitions and summaries
+### Prerequisites
+- **Python 3.10+** (for the World Model & Backend)
+- **Node.js 18+** (for the React Dashboard)
+- **uv** (Fast Python package installer)
 
-## Design principles
+### 1. Engine & Backend Setup
 
-### 1. Generic world model, backend-specific adapters
-
-The core agent logic should not need to know whether the environment is MiniGrid, ViZDoom, or another Gym backend. Instead:
-
-- the world model asks the adapter for capabilities
-- the adapter translates actions for that environment
-- the adapter can optionally provide environment-specific heuristics without coupling the main loop
-
-This is one of the major improvements in the current codebase.
-
-### 2. Explicit capability checks
-
-Adapters expose metadata and capability signals such as:
-
-- whether deterministic simulation is available
-- whether a stop action is meaningful
-- whether a goal-distance signal exists
-- how actions should be translated to environment-native values
-
-### 3. Prompt-driven perception and controller reasoning
-
-The runtime layer is intentionally separated from the environment-specific logic. The agent can swap prompt templates and model runtimes without rewriting the control loop.
-
-## Supported environment pattern
-
-The current repository is structured so that adding a new Gym environment mainly means:
-
-1. defining a backend package under the environment namespace
-2. registering the environment ID correctly
-3. implementing an adapter that conforms to the adapter contract
-4. optionally adding prompt/schema helpers for that backend
-
-This keeps the system much closer to the intended “plug-in environment” model.
-
-## Repository layout
-
-- `gsima-agent/gsima/agents/` — agent loop and planning logic
-- `gsima-agent/gsima/environments/` — environment factory, adapters, and backend-specific helpers
-- `gsima-agent/gsima/runtime/` — runtime integrations for models
-- `gsima-agent/gsima/memory/` — memory implementations
-- `gsima-agent/gsima/utils/` — config and utility helpers
-- `gsima-agent/tests/` — regression tests for the architecture and factory logic
-
-## Getting started
-
-### 1. Install dependencies
-
-This project uses `uv` for environment management, but standard Python tooling also works.
-
-```bash
-cd SIMA2-Agent
-uv venv
-source .venv/bin/activate
-uv pip install -r gsima-agent/requirements.txt
-```
-
-### 2. Configure the runtime and environment
-
-All runtime settings are managed under `gsima-agent/configs/`.
-
-```bash
-cp gsima-agent/configs/.env.example gsima-agent/configs/main.env
-```
-
-Update `main.env` so that:
-
-- `GYM_ENVIRONMENT` points to the target environment ID
-- `ENV_TYPE` matches the backend family when needed
-- your VLM / LLM endpoints are configured correctly
-
-Recommended Ollama setup:
-
-- **Perception:** `llava:latest`
-- **Controller:** `qwen2.5:3b` or `qwen3-1.7B-4bit`
-
-### 3. Run the agent
-
-Make sure your model runtime is available (for example, `ollama serve` if you are using Ollama).
+Navigate to the core agent directory and initialize the virtual environment:
 
 ```bash
 cd gsima-agent
-python -m gsima.main
+uv venv
+source .venv/bin/activate
+uv pip install -r requirements.txt
 ```
 
-Logs are written to `outputs/logs/`, and recordings are stored under `outputs/recordings/`.
+### 2. Environment Configuration
 
-## Running tests
-
-The test suite verifies the factory behavior, adapter contract, and agent logic without requiring live model calls.
+All runtime constraints and API keys are managed centrally in the `configs/` directory.
 
 ```bash
-pytest gsima-agent/tests/
+cp configs/.env.example configs/main.env
 ```
+
+Open `configs/main.env` and define the following crucial variables:
+- `GEMINI_API_KEY`: Your valid Google AI Studio key.
+- `GYM_ENVIRONMENT`: Target scenario ID (e.g., `VizdoomPredictPosition-v1` or `BabyAI-UnlockPickup-v0`).
+- `ENV_TYPE`: The namespace mapping (e.g., `vizdoom_predict`).
+
+### 3. Launching the Orchestration Server
+
+Boot the asynchronous FastAPI backend (ensure your virtual environment is active):
+
+```bash
+uvicorn gsima.api.server:app --reload
+```
+
+### 4. Launching the Experiment Dashboard
+
+In a new terminal process, boot the React visualization suite:
+
+```bash
+cd gsima-agent/gsima-ui
+npm install
+npm run dev
+```
+
+Navigate to `http://localhost:5173` to observe the agent's multimodal reasoning cycle in real-time.

@@ -20,18 +20,17 @@ def _infer_env_type(env_name: str) -> str:
     """
     normalized = env_name.strip().lower()
 
-    # Explicit backend prefixes take priority.
-    if normalized.startswith("minigrid"):
-        return "minigrid"
-    if normalized.startswith("vizdoom") or normalized.startswith("doom"):
-        return "vizdoom"
+    if normalized == "minigrid-empty-8x8-v0":
+        return "minigrid_empty"
+    if normalized == "babyai-unlockpickup-v0" or normalized == "minigrid-unlockpickup-v0":
+        return "babyai_unlock_pickup"
+    if normalized in ("vizdoombasic-v1", "vizdoombasic-multibinary-v1"):
+        return "vizdoom_basic"
+    if normalized in ("vizdoompredictposition-v1", "vizdoompredictposition-multibinary-v1"):
+        return "vizdoom_predict"
 
     # Fallback to the first hyphen-separated token for naming conventions.
     prefix = env_name.split("-")[0].lower()
-    if prefix.startswith("vizdoom") or prefix.startswith("doom"):
-        return "vizdoom"
-    if prefix.startswith("minigrid"):
-        return "minigrid"
     return prefix
 
 
@@ -43,6 +42,21 @@ def _to_adapter_class_name(env_type: str) -> str:
     """
     parts = re.split(r"[^a-zA-Z0-9]+", env_type)
     return "".join(part.capitalize() for part in parts if part) + "Adapter"
+
+
+class LingerRecordVideo(RecordVideo):
+    """A custom RecordVideo wrapper that lingers on the final frame before closing."""
+    def __init__(self, env, linger_frames=30, **kwargs):
+        super().__init__(env, **kwargs)
+        self.linger_frames = linger_frames
+
+    def close_video_recorder(self):
+        # Intercept the close signal to pump extra frames before it actually closes
+        if getattr(self, "recording", False) and getattr(self, "video_recorder", None):
+            logging.info(f"Lingering video for {self.linger_frames} extra frames before closing...")
+            for _ in range(self.linger_frames):
+                self.video_recorder.capture_frame()
+        super().close_video_recorder()
 
 
 def create_env_and_adapter() -> tuple:
@@ -107,11 +121,8 @@ def create_env_and_adapter() -> tuple:
                 )
 
         prompt_module = importlib.import_module(f"gsima.environments.{env_type}.prompt")
-        get_visual_prompt_func = getattr(prompt_module, "get_visual_prompt")
-        get_controller_prompt_func = getattr(prompt_module, "get_controller_prompt")
-        get_outcome_from_reward_func = getattr(prompt_module, "get_outcome_from_reward")
+        get_multimodal_prompt_func = getattr(prompt_module, "get_multimodal_prompt")
         create_memory_summary_func = getattr(prompt_module, "create_memory_summary")
-        choose_safe_action_func = getattr(prompt_module, "choose_safe_action", None)
 
     except (ImportError, AttributeError) as e:
         raise ImportError(f"Could not find or load components for env type '{env_type}': {e}")
@@ -126,16 +137,21 @@ def create_env_and_adapter() -> tuple:
     gym_make_render_mode = "rgb_array" 
     logging.info(f"Creating Gym environment '{env_name}' with base render_mode='{gym_make_render_mode}'")
     
+    gym_make_kwargs = {"render_mode": gym_make_render_mode}
+    if env_type == "vizdoom" and getattr(config, "FRAME_SKIP", None) is not None:
+        gym_make_kwargs["frame_skip"] = config.FRAME_SKIP
+        logging.info(f"Using frame_skip={config.FRAME_SKIP} for environment.")
+
     try:
-        env = gym.make(env_name, render_mode=gym_make_render_mode)
+        env = gym.make(env_name, **gym_make_kwargs)
     except Exception as e:
         raise RuntimeError(f"Failed to create Gym environment: {e}")
     
     adapter = adapter_class(env)
 
     # --- Environment-Specific Wrappers ---
-    if hasattr(adapter_module, "apply_env_wrappers"):
-        env = adapter_module.apply_env_wrappers(env)
+    if hasattr(env_package, "apply_env_wrappers"):
+        env = env_package.apply_env_wrappers(env)
 
     # --- User-Facing Rendering Wrappers ---
     if config.RENDER_MODE == "human":
@@ -146,8 +162,13 @@ def create_env_and_adapter() -> tuple:
         run_video_dir = os.path.join(config.RECORDING_DIR, f"{env_name}_{run_timestamp}")
         os.makedirs(run_video_dir, exist_ok=True)
         
-        # The name_prefix is now less important as the folder is unique
-        env = RecordVideo(env, video_folder=run_video_dir, name_prefix="episode")
+        # Override the metadata render_fps to slow down the recording if configured
+        if getattr(config, "RECORDING_FPS", None) is not None:
+            env.metadata["render_fps"] = config.RECORDING_FPS
+            logging.info(f"Overriding env.metadata['render_fps'] to {config.RECORDING_FPS} for slower recording playback.")
+        
+        # Use our custom LingerRecordVideo to pause on the final frame
+        env = LingerRecordVideo(env, video_folder=run_video_dir, name_prefix="episode", linger_frames=30)
         logging.info(f"Video recordings will be saved to '{run_video_dir}'.")
 
     logging.info(f"Environment '{env_name}' and components created successfully.")
@@ -155,9 +176,6 @@ def create_env_and_adapter() -> tuple:
         env,
         adapter,
         memory_system,
-        get_visual_prompt_func,
-        get_controller_prompt_func,
-        get_outcome_from_reward_func,
-        choose_safe_action_func,
+        get_multimodal_prompt_func,
     )
 

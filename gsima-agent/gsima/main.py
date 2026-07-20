@@ -1,4 +1,7 @@
 import logging
+import os
+import json
+from datetime import datetime
 
 from gsima import environments
 from gsima.utils.logging import setup_logging
@@ -10,84 +13,81 @@ from gsima.agents.context import AgentContext
 def log_configuration():
     """Logs the agent's starting configuration."""
     logging.info("Starting agent run with the following configuration:")
-    logging.info(f"AGENT_ARCH: {config.AGENT_ARCH}")
     logging.info(f"RUNTIME: {config.RUNTIME}")
-
-    if config.RUNTIME == "ollama":
-        logging.info(f"OLLAMA_PERCEPTION_MODEL: {config.OLLAMA_PERCEPTION_MODEL}")
-        logging.info(f"OLLAMA_PERCEPTION_CONTEXT_SIZE: {config.OLLAMA_PERCEPTION_CONTEXT_SIZE}")
-        logging.info(f"OLLAMA_CONTROLLER_MODEL: {config.OLLAMA_CONTROLLER_MODEL}")
-        logging.info(f"OLLAMA_CONTROLLER_CONTEXT_SIZE: {config.OLLAMA_CONTROLLER_CONTEXT_SIZE}")
-    else: # Default to mlx
-        logging.info(f"PERCEPTION_MODEL_ID: {config.PERCEPTION_MODEL_ID}")
-        logging.info(f"CONTROLLER_MODEL_ID: {config.CONTROLLER_MODEL_ID}")
+    if config.RUNTIME == "gemini":
+        logging.info(f"GEMINI_MODEL: {config.GEMINI_MODEL}")
     
     logging.info(f"GYM_ENVIRONMENT: {config.GYM_ENVIRONMENT}")
     logging.info(f"ENV_TYPE: {config.ENV_TYPE}")
     logging.info(f"RENDER_MODE: {config.RENDER_MODE}")
+    logging.info(f"EVAL_EPISODES: {config.EVAL_EPISODES}")
     logging.info(f"MAX_STEPS: {config.MAX_STEPS}")
     logging.info(f"INSTRUCTION: {config.INSTRUCTION}")
     logging.info(f"MEMORY_LENGTH: {config.MEMORY_LENGTH}")
 
 def main():
-    """Sets up and runs the gsima-agent."""
+    """Sets up and runs the gsima-agent evaluation harness."""
     setup_logging()
     log_configuration()
     
-    env = None # Ensure env is defined for the finally block
+    env = None
     try:
         # 1. Create all modular components using their factories
-        # Create runtimes
-        perception_runtime = None
-        if config.AGENT_ARCH == "world_model": # Only world_model agent uses VLM for perception currently
-            if config.RUNTIME == "ollama":
-                perception_runtime = runtime_factory.create_runtime(config.RUNTIME, "vlm", config.OLLAMA_PERCEPTION_MODEL)
-            else:
-                perception_runtime = runtime_factory.create_runtime(config.RUNTIME, "vlm", config.PERCEPTION_MODEL_ID)
-        
-        controller_runtime = None
-
-        if config.RUNTIME == "ollama":
-            controller_runtime = runtime_factory.create_runtime(config.RUNTIME, "llm", config.OLLAMA_CONTROLLER_MODEL)
-        else: # mlx
-            controller_runtime = runtime_factory.create_runtime(config.RUNTIME, "llm", config.CONTROLLER_MODEL_ID)
+        multimodal_runtime = None
+        if config.RUNTIME == "gemini":
+            multimodal_runtime = runtime_factory.create_runtime(config.RUNTIME, "multimodal", config.GEMINI_MODEL)
+        else:
+            raise ValueError("Only Gemini multimodal runtime is supported.")
         
         (
             env,
             adapter,
             memory_system,
-            get_visual_prompt,
-            get_controller_prompt,
-            get_outcome_from_reward,
-            choose_safe_action,
+            get_multimodal_prompt,
         ) = environments.create_env_and_adapter()
 
-        # Log adapter capability metadata so the runtime behavior is explicit
         logging.info(f"Adapter metadata: {adapter.get_env_metadata()}")
         logging.info(f"Action metadata: {adapter.get_action_metadata()}")
 
-        # 2. Assemble the context object
         context = AgentContext(
             env=env,
             adapter=adapter,
-            perception_runtime=perception_runtime,
-            controller_runtime=controller_runtime,
+            multimodal_runtime=multimodal_runtime,
             memory_system=memory_system,
-            get_visual_prompt=get_visual_prompt,
-            get_controller_prompt=get_controller_prompt,
-            get_outcome_from_reward=get_outcome_from_reward,
-            choose_safe_action=choose_safe_action,
+            get_multimodal_prompt=get_multimodal_prompt,
         )
 
-        # 3. Create the agent and run it with the context
         agent = create_agent()
-        logging.info(f"Running agent: {agent.name}...")
+        logging.info(f"Running agent: {agent.name} for {config.EVAL_EPISODES} episodes...")
         
         # Initialize human rendering window if applicable
         if config.RENDER_MODE == "human":
             env.render()
         
-        agent.run(context)
+        eval_results = []
+        output_dir = os.path.join("outputs", "evals", config.GYM_ENVIRONMENT)
+        os.makedirs(output_dir, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_file = os.path.join(output_dir, f"eval_results_{timestamp}.json")
+        
+        for episode in range(config.EVAL_EPISODES):
+            logging.info(f"=== Starting Episode {episode + 1}/{config.EVAL_EPISODES} ===")
+            metrics = agent.run(context)
+            metrics["episode"] = episode + 1
+            eval_results.append(metrics)
+            logging.info(f"Episode {episode + 1} finished with metrics: {metrics}")
+            
+            # Save incrementally
+            with open(output_file, 'w') as f:
+                json.dump(eval_results, f, indent=4)
+                
+        # Calculate summary
+        success_count = sum(1 for r in eval_results if r["success"])
+        success_rate = (success_count / config.EVAL_EPISODES) * 100
+        logging.info(f"=== Evaluation Complete ===")
+        logging.info(f"Total Episodes: {config.EVAL_EPISODES}")
+        logging.info(f"Success Rate: {success_rate:.1f}%")
+        logging.info(f"Results saved to: {output_file}")
 
     except Exception as e:
         logging.critical(f"A critical error occurred during agent setup or execution: {e}", exc_info=True)

@@ -9,6 +9,7 @@ __pycache__/
 *.safetensors
 
 # Recordings
-outputs/**
+output/**/**
+outputs/**/**
 
-configs/**
+# configs/**
