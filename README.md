@@ -83,7 +83,7 @@ graph TD
     end
 
     subgraph "Orchestration & Control"
-        API[Asynchronous Event Server<br/>FastAPI]:::api
+        API[Asynchronous Event Server]:::api
         WS_CLIENT <-->|Full-Duplex Telemetry| API
     end
 
