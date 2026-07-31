@@ -5,11 +5,8 @@
 __pycache__/
 *.pyc
 
-# MLX model cache (if stored locally)
-*.safetensors
-
 # Recordings
 output/**/**
 outputs/**/**
 
-# configs/**
+configs/**/**
