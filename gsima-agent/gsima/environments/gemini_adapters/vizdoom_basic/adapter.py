@@ -6,7 +6,7 @@ from typing import Any, Dict
 import vizdoom
 
 from gsima.environments.base import BaseAdapter
-from gsima.environments.vizdoom_basic.schema import SUPPORTED_ACTIONS, VizdoomAction
+from gsima.environments.gemini_adapters.vizdoom_basic.schema import SUPPORTED_ACTIONS, VizdoomAction
 
 
 class VizdoomBasicAdapter(BaseAdapter):
@@ -130,6 +130,7 @@ class VizdoomBasicAdapter(BaseAdapter):
         raw = raw_response.strip()
         if re.search(r'\b(enemy|enemies|monster|zombie|target|creature|hostile)\b', raw, re.I):
             normalized['enemies'] = 'one or more hostile targets appear visible'
+
         if re.search(r'\b(weapon|gun|rifle|pistol|shotgun|handgun|aiming)\b', raw, re.I):
             normalized['weapons'] = 'a weapon is visible'
         if re.search(r'\b(ammo|bullet|round|clip|shell)\b', raw, re.I):

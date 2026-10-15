@@ -1,6 +1,6 @@
 """Prompts and summaries for BabyAI UnlockPickup environments."""
 from typing import Deque, Dict, Any
-from gsima.environments.babyai_unlock_pickup.schema import SUPPORTED_ACTIONS
+from gsima.environments.gemini_adapters.babyai_unlock_pickup.schema import SUPPORTED_ACTIONS
 
 def get_multimodal_prompt(instruction: str, memory_summary: str) -> str:
     """Create a multimodal prompt for the BabyAI action selection loop."""

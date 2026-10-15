@@ -3,8 +3,8 @@ import re
 from typing import Any, Dict
 
 from gsima.utils import config
-from .base import BaseAgent
-from .context import AgentContext
+from gsima.agents.base import BaseAgent
+from gsima.agents.context import AgentContext
 
 
 def _parse_markdown_kv(markdown_text: str) -> Dict[str, str]:

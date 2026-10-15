@@ -28,6 +28,10 @@ def _infer_env_type(env_name: str) -> str:
         return "vizdoom_basic"
     if normalized in ("vizdoompredictposition-v1", "vizdoompredictposition-multibinary-v1"):
         return "vizdoom_predict"
+    if normalized in ("vizdoomdeadlycorridor-v1", "vizdoomdeadlycorridor-multibinary-v1"):
+        return "vizdoom_deadly_corridor"
+    if normalized in ("vizdoomhealthgathering-v1", "vizdoomhealthgathering-multibinary-v1", "vizdoomhealthgatheringsupreme-v1", "vizdoomhealthgatheringsupreme-multibinary-v1"):
+        return "vizdoom_health_gathering"
 
     # Fallback to the first hyphen-separated token for naming conventions.
     prefix = env_name.split("-")[0].lower()
@@ -95,13 +99,16 @@ def create_env_and_adapter() -> tuple:
     adapter_class_name = _to_adapter_class_name(env_type)
     logging.info(f"Detected environment type: '{env_type}'")
 
+    backend = getattr(config, "RUNTIME", "gemini").lower()
+    adapter_folder = "jev_adapters" if backend == "jev" else "gemini_adapters"
+    
     # --- Dynamic Module and Component Loading ---
     try:
-        env_package = importlib.import_module(f"gsima.environments.{env_type}")
+        env_package = importlib.import_module(f"gsima.environments.{adapter_folder}.{env_type}")
         if hasattr(env_package, "ensure_registration"):
             env_package.ensure_registration()
 
-        adapter_module = importlib.import_module(f"gsima.environments.{env_type}.adapter")
+        adapter_module = importlib.import_module(f"gsima.environments.{adapter_folder}.{env_type}.adapter")
         adapter_class = getattr(adapter_module, adapter_class_name, None)
         if adapter_class is None:
             adapter_candidates = [
@@ -120,9 +127,13 @@ def create_env_and_adapter() -> tuple:
                     f"Adapter class '{adapter_class_name}' not found in module {adapter_module.__name__}."
                 )
 
-        prompt_module = importlib.import_module(f"gsima.environments.{env_type}.prompt")
-        get_multimodal_prompt_func = getattr(prompt_module, "get_multimodal_prompt")
-        create_memory_summary_func = getattr(prompt_module, "create_memory_summary")
+        if backend != "jev":
+            prompt_module = importlib.import_module(f"gsima.environments.{adapter_folder}.{env_type}.prompt")
+            get_multimodal_prompt_func = getattr(prompt_module, "get_multimodal_prompt")
+            create_memory_summary_func = getattr(prompt_module, "create_memory_summary")
+        else:
+            get_multimodal_prompt_func = None
+            create_memory_summary_func = lambda x, y: ""
 
     except (ImportError, AttributeError) as e:
         raise ImportError(f"Could not find or load components for env type '{env_type}': {e}")
@@ -138,7 +149,7 @@ def create_env_and_adapter() -> tuple:
     logging.info(f"Creating Gym environment '{env_name}' with base render_mode='{gym_make_render_mode}'")
     
     gym_make_kwargs = {"render_mode": gym_make_render_mode}
-    if env_type == "vizdoom" and getattr(config, "FRAME_SKIP", None) is not None:
+    if env_type.startswith("vizdoom") and getattr(config, "FRAME_SKIP", None) is not None:
         gym_make_kwargs["frame_skip"] = config.FRAME_SKIP
         logging.info(f"Using frame_skip={config.FRAME_SKIP} for environment.")
 
@@ -147,6 +158,21 @@ def create_env_and_adapter() -> tuple:
     except Exception as e:
         raise RuntimeError(f"Failed to create Gym environment: {e}")
     
+    # --- ViZDoom Episode Timeout Configuration ---
+    if env_type.startswith("vizdoom"):
+        game = getattr(getattr(env, "unwrapped", env), "game", None)
+        if game is not None and hasattr(game, "set_episode_timeout"):
+            timeout = getattr(config, "EPISODE_TIMEOUT", None)
+            if timeout is not None:
+                game.set_episode_timeout(timeout)
+                logging.info(f"Configured ViZDoom episode_timeout to {timeout} tics from EPISODE_TIMEOUT.")
+            elif getattr(config, "MAX_STEPS", None) is not None and getattr(config, "FRAME_SKIP", None) is not None:
+                needed_tics = config.MAX_STEPS * config.FRAME_SKIP
+                current_timeout = game.get_episode_timeout()
+                if current_timeout > 0 and needed_tics > current_timeout:
+                    game.set_episode_timeout(needed_tics)
+                    logging.info(f"Automatically increased ViZDoom episode_timeout from {current_timeout} to {needed_tics} tics to match MAX_STEPS={config.MAX_STEPS}.")
+
     adapter = adapter_class(env)
 
     # --- Environment-Specific Wrappers ---

@@ -2,7 +2,7 @@
 Prompts and summaries for MiniGrid environments, designed for a Multimodal SIMA2 agent.
 """
 from typing import Deque, Dict, Any
-from gsima.environments.minigrid_empty.schema import SUPPORTED_ACTIONS
+from gsima.environments.gemini_adapters.minigrid_empty.schema import SUPPORTED_ACTIONS
 
 def get_multimodal_prompt(instruction: str, memory_summary: str) -> str:
     """

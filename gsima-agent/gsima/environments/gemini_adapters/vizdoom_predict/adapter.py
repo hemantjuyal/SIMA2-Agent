@@ -6,7 +6,7 @@ from typing import Any, Dict
 import vizdoom
 
 from gsima.environments.base import BaseAdapter
-from gsima.environments.vizdoom_predict.schema import SUPPORTED_ACTIONS, VizdoomPredictAction
+from gsima.environments.gemini_adapters.vizdoom_predict.schema import SUPPORTED_ACTIONS, VizdoomPredictAction
 
 class VizdoomPredictAdapter(BaseAdapter):
     """Adapter for ViZDoom Predict Position environments.

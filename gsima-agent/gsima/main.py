@@ -34,10 +34,11 @@ def main():
     try:
         # 1. Create all modular components using their factories
         multimodal_runtime = None
-        if config.RUNTIME == "gemini":
-            multimodal_runtime = runtime_factory.create_runtime(config.RUNTIME, "multimodal", config.GEMINI_MODEL)
+        if getattr(config, "RUNTIME", "gemini").lower() != "jev":
+            logging.info("Initializing Gemini Vision-Language Model...")
+            multimodal_runtime = runtime_factory.create_runtime("gemini", "multimodal", config.GEMINI_MODEL)
         else:
-            raise ValueError("Only Gemini multimodal runtime is supported.")
+            logging.info("RUNTIME is set to 'jev'. Bypassing Gemini initialization (Jev plays purely via structured data).")
         
         (
             env,

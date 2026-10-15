@@ -20,6 +20,10 @@ if not env_type:
         env_type = "vizdoom_basic"
     elif normalized in ("vizdoompredictposition-v1", "vizdoompredictposition-multibinary-v1"):
         env_type = "vizdoom_predict"
+    elif normalized in ("vizdoomdeadlycorridor-v1", "vizdoomdeadlycorridor-multibinary-v1"):
+        env_type = "vizdoom_deadly_corridor"
+    elif normalized in ("vizdoomhealthgathering-v1", "vizdoomhealthgathering-multibinary-v1", "vizdoomhealthgatheringsupreme-v1", "vizdoomhealthgatheringsupreme-multibinary-v1"):
+        env_type = "vizdoom_health_gathering"
     else:
         env_type = gym_environment.split("-")[0].lower()
 
@@ -30,10 +34,14 @@ if env_type:
 
 # --- Runtime Configuration ---
 RUNTIME = os.getenv("RUNTIME", "gemini")
+AGENT_BACKEND = os.getenv("AGENT_BACKEND", "gemini")
 
 # --- Gemini Runtime Configuration ---
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
+
+# --- TypeSafe Runtime Configuration ---
+TYPESAFE_API_KEY = os.getenv("TYPESAFE_API_KEY", "")
 
 # --- Evaluation Selection ---
 EVAL_EPISODES = int(os.getenv("EVAL_EPISODES", 1))
@@ -48,6 +56,13 @@ if FRAME_SKIP is not None:
         FRAME_SKIP = int(FRAME_SKIP)
     except ValueError:
         FRAME_SKIP = None
+
+EPISODE_TIMEOUT = os.getenv("EPISODE_TIMEOUT")
+if EPISODE_TIMEOUT is not None:
+    try:
+        EPISODE_TIMEOUT = int(EPISODE_TIMEOUT)
+    except ValueError:
+        EPISODE_TIMEOUT = None
 
 # --- Agent Run Configuration ---
 MAX_STEPS = int(os.getenv("MAX_STEPS", 10))

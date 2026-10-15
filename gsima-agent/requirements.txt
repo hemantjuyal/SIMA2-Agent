@@ -13,3 +13,4 @@ torchvision
 fastapi
 uvicorn
 websockets
+typesafe-sdk

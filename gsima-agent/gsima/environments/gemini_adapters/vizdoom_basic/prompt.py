@@ -1,6 +1,6 @@
 """Prompts and summaries for ViZDoom environments."""
 from typing import Any, Deque, Dict
-from gsima.environments.vizdoom_basic.schema import SUPPORTED_ACTIONS
+from gsima.environments.gemini_adapters.vizdoom_basic.schema import SUPPORTED_ACTIONS
 
 def get_multimodal_prompt(instruction: str, memory_summary: str) -> str:
     """Create a multimodal prompt for the ViZDoom action selection loop."""

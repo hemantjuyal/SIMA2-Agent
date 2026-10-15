@@ -72,7 +72,12 @@ def _run_agent_sync(instruction: str, q: Queue, stop_event: threading.Event):
     config.INSTRUCTION = instruction
     
     try:
-        multimodal_runtime = runtime_factory.create_runtime(config.RUNTIME, "multimodal", config.GEMINI_MODEL)
+        multimodal_runtime = None
+        if getattr(config, "RUNTIME", "gemini").lower() != "jev":
+            logging.info("Initializing Gemini Vision-Language Model for WebSocket runtime...")
+            multimodal_runtime = runtime_factory.create_runtime(config.RUNTIME, "multimodal", config.GEMINI_MODEL)
+        else:
+            logging.info("WebSocket backend running in Jev Mode. Gemini bypassed.")
         env, adapter, memory_system, get_multimodal_prompt = environments.create_env_and_adapter()
         
         def event_emitter(event_type: str, data: any):
